@@ -487,8 +487,12 @@ function renderSessions(st) {
     return;
   }
   entries.sort((a, b) => a[1] - b[1]);
+  const STATE = {idle:["待機","#B9B6AC"], thinking:["Thinking","#2E6BFF"], done:["完了","#00C000"],
+                 input:["入力待ち","#E8900A"], error:["エラー","#E23B2E"]};
   card.innerHTML = entries.map(([sid, idx]) => {
     const info = (st.session_info || {})[sid] || {};
+    const astate = ((st.agent_state || {})[idx] || {}).state || "idle";
+    const [slabel, scolor] = STATE[astate] || STATE.idle;
     const ctx = info.is_cmux
       ? `<span class="scope-badge scope-codex">cmux</span>`
       : `<span class="scope-badge scope-common">app</span>`;
@@ -496,7 +500,8 @@ function renderSessions(st) {
     const cwd = info.cwd ? ` · ${info.cwd.split("/").slice(-1)[0]}` : "";
     return `<div class="pending-item">
       <span class="badge">AG${idx - 1}</span>
-      <div class="info"><div class="tool">${sid.slice(0, 8)} ${ctx}<span class="value">${cwd}${sel}</span></div>
+      <div class="info"><div class="tool">${sid.slice(0, 8)} ${ctx}
+        <span style="color:${scolor};font-weight:700">● ${slabel}</span><span class="value">${cwd}${sel}</span></div>
         <div class="detail">${info.cmux_workspace_id ? "ws: " + info.cmux_workspace_id.slice(0, 8) : "（cmux 外 / 未捕捉）"}</div></div>
     </div>`;
   }).join("");
