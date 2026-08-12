@@ -23,6 +23,19 @@ DEFAULT_CONFIG = {
     #   role: agent(index必須) / accept / fallback / deny / none
     "keys": {},
     "device": {"vid": "0x303A", "pid": "0x8360"},
+    # claude/codex モード切替 (issue #7: A/Cハイブリッド)
+    #   toggle_key: このキーの tap でモード手動トグル / long で auto に戻す
+    #   auto: 前面アプリ監視で自動切替 (Codexアプリ前面時=codex / それ以外=claude)
+    #   ambient_*: モード表示のアンビエントリング(枠)色 packed RGB。claude=オレンジ系/codex=青系
+    "mode": {
+        "current": "claude",       # 起動時のモード
+        "toggle_key": "ACT12",     # マイク右隣・右下ボタン (実機確認済み)
+        "auto": True,              # 前面アプリ自動切替を有効化
+        "codex_app": "ChatGPT",    # 前面アプリ名がこれなら codex
+        "ambient_claude": 0xD97757,  # Claude コーラル (オレンジ系)
+        "ambient_codex": 0x0A84FF,   # 青系
+        "ambient_brightness": 0.5,
+    },
 }
 
 _lock = threading.Lock()
