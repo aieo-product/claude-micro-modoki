@@ -187,6 +187,9 @@
   </div>
 </div>
 
+<h2>アクティブセッション</h2>
+<div class="card" id="sessions-card"><div class="empty">アクティブなセッションはありません</div></div>
+
 <h2>承認待ち</h2>
 <div class="card" id="pending-card"><div class="empty">保留中の承認要求はありません</div></div>
 
@@ -435,6 +438,7 @@ function renderStatus(st) {
   $("st-led").textContent = st.led_control ? "有効" : "未対応";
   $("last-key").textContent = st.last_raw_key ? `最終キー: ${st.last_raw_key.key_id}` : "—";
 
+  renderSessions(st);
   const badge = $("mode-badge");
   const md = catalog.modes.find(m => m.id === st.mode);
   if (md) {
@@ -474,6 +478,29 @@ async function resolve(id, result) {
   catch (e) { toast("失敗: " + e.message); }
 }
 window.resolve = resolve;
+
+function renderSessions(st) {
+  const card = $("sessions-card");
+  const entries = Object.entries(st.sessions || {});
+  if (!entries.length) {
+    card.innerHTML = `<div class="empty">アクティブなセッションはありません</div>`;
+    return;
+  }
+  entries.sort((a, b) => a[1] - b[1]);
+  card.innerHTML = entries.map(([sid, idx]) => {
+    const info = (st.session_info || {})[sid] || {};
+    const ctx = info.is_cmux
+      ? `<span class="scope-badge scope-codex">cmux</span>`
+      : `<span class="scope-badge scope-common">app</span>`;
+    const sel = st.selected_agent === idx ? " · 選択中" : "";
+    const cwd = info.cwd ? ` · ${info.cwd.split("/").slice(-1)[0]}` : "";
+    return `<div class="pending-item">
+      <span class="badge">AG${idx - 1}</span>
+      <div class="info"><div class="tool">${sid.slice(0, 8)} ${ctx}<span class="value">${cwd}${sel}</span></div>
+        <div class="detail">${info.cmux_workspace_id ? "ws: " + info.cmux_workspace_id.slice(0, 8) : "（cmux 外 / 未捕捉）"}</div></div>
+    </div>`;
+  }).join("");
+}
 
 async function setMode(body) {
   try { await api("/api/mode", {method: "POST", body: JSON.stringify(body)}); poll(); }

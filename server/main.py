@@ -136,8 +136,37 @@ class Bridge:
         # 満杯: 最も古いセッションのキーを奪う (LRU)
         oldest = next(iter(self.sessions))
         idx = self.sessions.pop(oldest)
+        self.session_info.pop(oldest, None)
         self.sessions[session_id] = idx
         return idx
+
+    # ---- セッションライフサイクル (issue #4/#6) ----
+
+    def register_session(self, session_id: str, info: dict) -> int:
+        """SessionStart: エージェントキー確保 + cmux workspace 等を記録 + idle 点灯。"""
+        idx = self.assign_agent_key(session_id)
+        self.session_info[session_id] = {
+            "cmux_workspace_id": (info.get("env") or {}).get("cmux_workspace_id"),
+            "is_cmux": bool((info.get("env") or {}).get("is_cmux")),
+            "cwd": info.get("cwd"),
+        }
+        self.set_agent_led(idx, "idle")
+        print(f"[session] start {session_id} -> AG{idx-1} cmux={self.session_info[session_id]['is_cmux']}", flush=True)
+        return idx
+
+    def release_session(self, session_id: str):
+        """SessionEnd: キー解放 + LED 消灯。"""
+        idx = self.sessions.pop(session_id, None)
+        self.session_info.pop(session_id, None)
+        if idx is not None:
+            self.set_agent_led(idx, "off")
+            print(f"[session] end {session_id} (AG{idx-1} 解放)", flush=True)
+
+    def notify_session(self, session_id: str, state: str):
+        """Notification/Stop: 該当セッションのキー LED を状態表示に更新。"""
+        idx = self.sessions.get(session_id)
+        if idx is not None:
+            self.set_agent_led(idx, state)
 
     # ---- モード制御 (issue #7 → #11: 4モード) ----
 
@@ -299,6 +328,7 @@ async def handle_status(request: web.Request):
             for r in sorted(bridge.pending.values(), key=lambda r: r["created"])
         ],
         "sessions": bridge.sessions,
+        "session_info": bridge.session_info,
         "last_raw_key": bridge.last_raw_key,
         "mode": bridge.mode,
         "auto_mode": bridge.auto_mode,
@@ -313,6 +343,24 @@ async def handle_actions(request: web.Request):
         "modes": actions_mod.MODES,
         "icon_choices": actions_mod.ICON_CHOICES,
     })
+
+
+async def handle_event(request: web.Request):
+    """Claude Code の非承認イベント (SessionStart/Stop/SessionEnd/Notification, #4/#6)。"""
+    body = await request.json()
+    event = body.get("event")
+    sid = body.get("session_id")
+    if not sid:
+        return web.json_response({"ok": False, "error": "no session_id"}, status=400)
+    if event == "SessionStart":
+        bridge.register_session(sid, body)
+    elif event in ("SessionEnd",):
+        bridge.release_session(sid)
+    elif event == "Notification":
+        bridge.notify_session(sid, "pending")   # 入力/許可待ち = 注意喚起
+    elif event == "Stop":
+        bridge.notify_session(sid, "idle")       # 応答完了 = 待機
+    return web.json_response({"ok": True})
 
 
 async def handle_mode(request: web.Request):
@@ -432,6 +480,7 @@ def create_app() -> web.Application:
     app.router.add_post("/api/learn", handle_learn)
     app.router.add_post("/api/resolve", handle_resolve)
     app.router.add_post("/api/mode", handle_mode)
+    app.router.add_post("/api/event", handle_event)
     app.router.add_get("/api/actions", handle_actions)
     app.router.add_get("/", handle_index)
     app.on_startup.append(on_startup)
