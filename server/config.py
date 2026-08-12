@@ -12,8 +12,7 @@ DEFAULT_CONFIG = {
     "brightness": 100,
     # 無操作でライトオフにするまでの分数。0 = 無効
     "auto_dim_minutes": 3,
-    # ジェスチャー → 承認結果のマッピング (accept=allow / fallback=ask / deny)
-    "gestures": {"tap": "accept", "double": "fallback", "long": "deny"},
+    # tap/double/long の検出タイミング (承認はアクションキーで行うため gesture→承認マッピングは廃止)
     "timings": {"tap_max_ms": 400, "double_window_ms": 350, "long_min_ms": 600},
     # エージェントキーの割当方式: recent = 最近のセッションに自動割当 (LRU)
     "agent_keys": {"mode": "recent"},

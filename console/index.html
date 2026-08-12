@@ -156,7 +156,7 @@
   <div class="row">
     <div>
       <div class="label">モード <span id="mode-badge" class="mode-badge">—</span></div>
-      <div class="desc">枠の色=AI系統(claude=コーラル/codex=青)・エフェクト=文脈(app=点灯/cmux=呼吸)。ACT12 キーで循環</div>
+      <div class="desc">枠の色=AI系統(claude=コーラル/codex=青)・エフェクト=文脈(app=点灯/cmux=呼吸)。ACT12: タップ=claude/codex切替・ダブルタップ=アプリ/cmux切替・長押し=auto。<b>codex 時は原作 Codex Micro と同等動作（本アプリは介入せず公式へパススルー）</b></div>
     </div>
     <div id="mode-buttons" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end"></div>
   </div>
@@ -192,18 +192,6 @@
 
 <h2>オプション</h2>
 <div class="card">
-  <div class="row">
-    <div><div class="label">タップ</div><div class="desc">エージェントキーを 1 回押したときの動作</div></div>
-    <select id="cfg-g-tap" class="gesture"></select>
-  </div>
-  <div class="row">
-    <div><div class="label">ダブルタップ</div><div class="desc">素早く 2 回押したときの動作</div></div>
-    <select id="cfg-g-double" class="gesture"></select>
-  </div>
-  <div class="row">
-    <div><div class="label">長押し</div><div class="desc">押し続けたときの動作</div></div>
-    <select id="cfg-g-long" class="gesture"></select>
-  </div>
   <div class="row">
     <div><div class="label">エージェントキー</div><div class="desc">6 つのエージェントキーがフォローする対象を選択します</div></div>
     <select id="cfg-agentmode"><option value="recent">最近のセッション</option></select>
@@ -254,10 +242,6 @@
 <div id="toast"></div>
 
 <script>
-const GESTURE_OPTIONS = [
-  ["accept", "承認（allow）"], ["fallback", "保留（ask）"],
-  ["deny", "拒否（deny）"], ["", "なし"],
-];
 // パッド見た目: 公式レイアウト準拠。type: stick/knob/key/wide
 const PAD_CELLS = [
   {pos:"stick", type:"stick"}, {pos:"p01", type:"key"}, {pos:"p02", type:"key"}, {pos:"enc", type:"knob"},
@@ -416,11 +400,6 @@ $("m-save").onclick = () => {
 };
 
 function renderOptions() {
-  for (const g of ["tap", "double", "long"]) {
-    const sel = $(`cfg-g-${g}`);
-    sel.innerHTML = GESTURE_OPTIONS.map(([v, l]) => `<option value="${v}">${l}</option>`).join("");
-    sel.value = config.gestures[g] ?? "";
-  }
   $("cfg-brightness").value = config.brightness;
   $("brightness-val").textContent = config.brightness + "%";
   $("cfg-autodim").value = String(config.auto_dim_minutes);
@@ -435,10 +414,6 @@ $("save").onclick = async () => {
   config.auto_dim_minutes = parseInt($("cfg-autodim").value);
   config.approval_timeout_sec = parseInt($("cfg-timeout").value);
   config.agent_keys.mode = $("cfg-agentmode").value;
-  for (const g of ["tap", "double", "long"]) {
-    const v = $(`cfg-g-${g}`).value;
-    if (v) config.gestures[g] = v; else delete config.gestures[g];
-  }
   try {
     config = await api("/api/config", {method: "PUT", body: JSON.stringify(config)});
     toast("保存しました");

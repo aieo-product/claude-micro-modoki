@@ -74,13 +74,23 @@ class Bridge:
     def _on_gesture(self, key_id: str, gesture: str):
         if self._learn_future and not self._learn_future.done():
             return  # 学習モード中は承認操作に使わない
-        # モード切替キー: tap で enabled モードを循環 / long で auto に戻す (issue #11)
+        # モード切替キー (ACT12): tap=claude/codex循環 / double=app/cmux(cli)循環 / long=auto (issue #11)
+        # このキーだけは codex モードでも常に有効（モードを抜ける手段のため）
         if key_id == self.cfg["mode"]["toggle_key"]:
             if gesture == "tap":
                 self.auto_mode = False
-                self.set_mode(self._next_mode())
+                self._toggle_family()
+            elif gesture == "double":
+                self.auto_mode = False
+                self._toggle_context()
             elif gesture == "long":
                 self.auto_mode = True  # 前面アプリ自動切替に復帰
+            return
+        # ★codex 系モードは原作 Codex Micro 同等のパススルー動作 (issue #7/#11):
+        #   公式 Codex(ChatGPT) アプリがデバイスのキーイベントを直接処理するため、
+        #   本 bridge は介入しない（エージェント選択・アクションも公式側に委ねる）。
+        #   → ラップせずそのまま流すことで、エージェントのフォーカス等が原作通りに動く。
+        if actions_mod.mode_family(self.mode) == "codex":
             return
         binding = self.cfg["keys"].get(key_id)
         if not binding or binding.get("role") in (None, "none"):
@@ -92,13 +102,15 @@ class Bridge:
         elif role == "action":
             self.run_action(binding.get("action"), gesture)
 
-    def _next_mode(self) -> str:
-        enabled = self.cfg["mode"].get("enabled") or actions_mod.MODE_IDS
-        try:
-            i = enabled.index(self.mode)
-        except ValueError:
-            return enabled[0]
-        return enabled[(i + 1) % len(enabled)]
+    def _toggle_family(self):
+        cur_ctx = actions_mod.mode_context(self.mode)
+        new_fam = "codex" if actions_mod.mode_family(self.mode) == "claude" else "claude"
+        self.set_mode(actions_mod.mode_for(new_fam, cur_ctx) or self.mode)
+
+    def _toggle_context(self):
+        cur_fam = actions_mod.mode_family(self.mode)
+        new_ctx = "cmux" if actions_mod.mode_context(self.mode) == "app" else "app"
+        self.set_mode(actions_mod.mode_for(cur_fam, new_ctx) or self.mode)
 
     # ---- 承認要求の解決 ----
 

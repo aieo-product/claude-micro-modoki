@@ -33,6 +33,14 @@ def mode_context(mode_id: str) -> str:
     return "app"
 
 
+def mode_for(family: str, context: str) -> str | None:
+    """(family, context) から mode id を引く。ACT12 の tap=family切替 / double=context切替 用。"""
+    for m in MODES:
+        if m["family"] == family and m["context"] == context:
+            return m["id"]
+    return None
+
+
 # ---- アクションカタログ（issue #5 第一案・編集可能） ----
 # id / label / icon(絵文字デフォルト) / scope
 ACTIONS = [
