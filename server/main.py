@@ -86,11 +86,12 @@ class Bridge:
             elif gesture == "long":
                 self.auto_mode = True  # 前面アプリ自動切替に復帰
             return
-        # ★codex 系モードは原作 Codex Micro 同等のパススルー動作 (issue #7/#11):
-        #   公式 Codex(ChatGPT) アプリがデバイスのキーイベントを直接処理するため、
-        #   本 bridge は介入しない（エージェント選択・アクションも公式側に委ねる）。
-        #   → ラップせずそのまま流すことで、エージェントのフォーカス等が原作通りに動く。
-        if actions_mod.mode_family(self.mode) == "codex":
+        # ★パススルーは codex-app のみ (issue #7/#11):
+        #   codex-app = 公式 Codex(ChatGPT) アプリが起動中でデバイスを直接処理 → 本 bridge は介入せず素通し
+        #   （エージェント選択・アクションを公式に委ね、フォーカス等が原作通り動く）。
+        #   一方 cmux-codex は codex を CLI で使うため公式アプリが検知できない → 本 bridge が実装する
+        #   （cmux タブ前面化 + 本アプリで設定した codex アクションを実行）。取りこぼし注意。
+        if self.is_passthrough():
             return
         binding = self.cfg["keys"].get(key_id)
         if not binding or binding.get("role") in (None, "none"):
@@ -165,9 +166,14 @@ class Bridge:
         self.adapter.set_ambient_color(color, brightness=m["ambient_brightness"],
                                        effect=effect, speed=speed)
 
+    def is_passthrough(self) -> bool:
+        """codex-app のみパススルー（公式 Codex アプリに委ねる）。cmux-codex は本 bridge が実装。"""
+        return (actions_mod.mode_family(self.mode) == "codex"
+                and actions_mod.mode_context(self.mode) == "app")
+
     def set_agent_led(self, index: int, state: str):
-        """codex 系モードでは Codex アプリに LED を譲るため承認 LED を書き込まない。"""
-        if actions_mod.mode_family(self.mode) == "codex":
+        """codex-app では公式アプリに LED を譲り書き込まない（cmux-codex は本 bridge が制御）。"""
+        if self.is_passthrough():
             return
         self.adapter.set_agent_led(index, state)
 
