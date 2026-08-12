@@ -54,7 +54,18 @@ class Bridge:
             timings=self.cfg["timings"],
             on_gesture=self._on_gesture_threadsafe,
             on_raw_key=self._on_raw_key_threadsafe,
+            on_connect=self._on_connect_threadsafe,
         )
+
+    def _on_connect_threadsafe(self):
+        if self.loop:
+            self.loop.call_soon_threadsafe(self._reassert_display)
+
+    def _reassert_display(self):
+        """(再)接続時のみ枠とセッション LED を一度再アサート（常時再送しない=軽量）。"""
+        self.apply_ambient()
+        for sid, idx in self.sessions.items():
+            self.set_agent_led(idx, "idle")
 
     # ---- HID コールバック (リーダースレッドから呼ばれる) ----
 
@@ -171,13 +182,11 @@ class Bridge:
     # ---- モード制御 (issue #7 → #11: 4モード) ----
 
     def set_mode(self, mode: str):
-        """4モードを切り替え、枠(アンビエント)を color=family / effect=context で更新。"""
-        if mode not in actions_mod.MODE_IDS:
-            self.apply_ambient()
+        """4モードを切り替え。枠(HID書き込み)は**変化時のみ**反映（同一モードでは書き込まない=軽量）。"""
+        if mode not in actions_mod.MODE_IDS or mode == self.mode:
             return
-        if mode != self.mode:
-            self.mode = mode
-            print(f"[mode] -> {mode}", flush=True)
+        self.mode = mode
+        print(f"[mode] -> {mode}", flush=True)
         self.apply_ambient()
 
     def apply_ambient(self):
@@ -441,9 +450,10 @@ def _mode_from_frontmost(front: str) -> str:
 
 
 async def mode_daemon(app):
-    """auto モード時に前面アプリでモード自動切替 + 枠の色を定期再アサート。"""
-    await asyncio.sleep(2)  # デバイス接続待ち
-    bridge.apply_ambient()
+    """auto モード時のみ前面アプリを監視してモード自動切替（軽量: auto オフなら osascript を叩かない）。
+    枠/LED の再アサートは接続時 on_connect に移譲したので、ここでは HID 書き込みをしない。"""
+    await asyncio.sleep(2)  # デバイス接続待ち（枠は on_connect で反映）
+    poll_sec = bridge.cfg["mode"].get("poll_sec", 3)
     while True:
         try:
             if bridge.auto_mode:
@@ -451,10 +461,11 @@ async def mode_daemon(app):
                 if front:
                     cand = _mode_from_frontmost(front)
                     if cand in bridge.cfg["mode"].get("enabled", actions_mod.MODE_IDS):
-                        bridge.set_mode(cand)
-            # 全モードで枠を維持・再アサート (表示は本アプリが統合管理。codex-app の公式上書きにも対抗)
-            bridge.apply_ambient()
-            await asyncio.sleep(2)
+                        bridge.set_mode(cand)  # 変化時のみ apply_ambient（set_mode 内）
+                await asyncio.sleep(poll_sec)
+            else:
+                # 手動モード時は前面監視不要 → osascript を叩かず長めに待機（負荷ゼロ）
+                await asyncio.sleep(5)
         except asyncio.CancelledError:
             break
 

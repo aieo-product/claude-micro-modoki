@@ -74,11 +74,12 @@ class HidAdapter:
     """
 
     def __init__(self, vid: int, pid: int, timings: dict,
-                 on_gesture=None, on_raw_key=None):
+                 on_gesture=None, on_raw_key=None, on_connect=None):
         self.vid, self.pid = vid, pid
         self.timings = timings
         self.on_gesture = on_gesture or (lambda k, g: None)
         self.on_raw_key = on_raw_key or (lambda k: None)
+        self.on_connect = on_connect or (lambda: None)  # (再)接続時: 枠/LED 再アサート用
         self.status = {"found": False, "open": False, "error": None, "fw": None}
         self._stop = threading.Event()
         self._dev = None
@@ -170,6 +171,10 @@ class HidAdapter:
                 self._dev = dev
             self.status.update(open=True, error=None)
             self._handshake()  # デバイスをエージェントモードに入れる（キーイベント有効化）
+            try:
+                self.on_connect()  # (再)接続時に枠/LED を一度だけ再アサート（常時再送しない=軽量化）
+            except Exception:
+                pass
             try:
                 self._read_loop(dev)
             except (OSError, ValueError) as e:
