@@ -86,13 +86,10 @@ class Bridge:
             elif gesture == "long":
                 self.auto_mode = True  # 前面アプリ自動切替に復帰
             return
-        # ★パススルーは codex-app のみ (issue #7/#11):
-        #   codex-app = 公式 Codex(ChatGPT) アプリが起動中でデバイスを直接処理 → 本 bridge は介入せず素通し
-        #   （エージェント選択・アクションを公式に委ね、フォーカス等が原作通り動く）。
-        #   一方 cmux-codex は codex を CLI で使うため公式アプリが検知できない → 本 bridge が実装する
-        #   （cmux タブ前面化 + 本アプリで設定した codex アクションを実行）。取りこぼし注意。
-        if self.is_passthrough():
-            return
+        # ★全モードで本アプリが頭脳: config 解釈・エージェント選択/表示・LED は本アプリが行う (issue #11)。
+        #   codex-app でも本アプリの設定通りに動作させ、"アクションの実行だけ" 公式 Codex アプリへ委譲する
+        #   （run_action / _exec_action 内でモード別にディスパッチ）。エージェント表示を統合するため
+        #   codex アプリ側も本アプリが制御する。
         binding = self.cfg["keys"].get(key_id)
         if not binding or binding.get("role") in (None, "none"):
             return
@@ -166,15 +163,8 @@ class Bridge:
         self.adapter.set_ambient_color(color, brightness=m["ambient_brightness"],
                                        effect=effect, speed=speed)
 
-    def is_passthrough(self) -> bool:
-        """codex-app のみパススルー（公式 Codex アプリに委ねる）。cmux-codex は本 bridge が実装。"""
-        return (actions_mod.mode_family(self.mode) == "codex"
-                and actions_mod.mode_context(self.mode) == "app")
-
     def set_agent_led(self, index: int, state: str):
-        """codex-app では公式アプリに LED を譲り書き込まない（cmux-codex は本 bridge が制御）。"""
-        if self.is_passthrough():
-            return
+        """LED/エージェント表示は全モードで本アプリが制御（表示統合）。codex-app 含む。"""
         self.adapter.set_agent_led(index, state)
 
     # ---- エージェントキー: 選択 + 前面化 (issue #4) ----
@@ -211,6 +201,8 @@ class Bridge:
     # ---- アクションキー実行 (issue #5, 実処理は順次実装) ----
 
     def run_action(self, action_id, gesture):
+        """本アプリの設定に基づきアクションを決定。実行先はモードで異なる:
+        claude系=直接 / codex-app=公式Codexアプリへ委譲(実行のみパススルー) / cmux-codex=codex CLI。"""
         scope = actions_mod.action_scope(action_id)
         if scope is None:
             return
@@ -219,15 +211,27 @@ class Bridge:
         if scope != "common" and scope != family:
             print(f"[action] {action_id} はモード({self.mode})対象外", flush=True)
             return
-        if action_id == "approve":
-            self._resolve_selected_or_oldest("accept")
-        elif action_id == "reject":
-            self._resolve_selected_or_oldest("deny")
-        elif action_id == "hold":
-            self._resolve_selected_or_oldest("fallback")
+        # 承認系(共通)は本アプリが直接解決 (Claude Code hook 由来の保留要求)
+        if action_id in ("approve", "reject", "hold"):
+            self._resolve_selected_or_oldest(
+                {"approve": "accept", "reject": "deny", "hold": "fallback"}[action_id])
+            return
+        # それ以外は実行先へディスパッチ (決定は本アプリ、実行のみ委譲)
+        self._exec_action(action_id)
+
+    def _exec_action(self, action_id):
+        """アクション実行のディスパッチ (実処理は #5 で順次実装)。"""
+        ctx = actions_mod.mode_context(self.mode)
+        fam = actions_mod.mode_family(self.mode)
+        if fam == "codex" and ctx == "app":
+            # TODO(#5): 公式 Codex アプリへ実行を委譲 (AppleScript/アプリ操作)。決定は本アプリ設定
+            print(f"[action] {action_id} -> codex-app へ委譲 (未実装)", flush=True)
+        elif ctx == "cmux":
+            # TODO(#5): 対象 cmux タブの CLI へキーストローク送出
+            print(f"[action] {action_id} -> cmux CLI 送出 (未実装)", flush=True)
         else:
-            # TODO(#5): 各アクションの実処理 (キーストローク送出/アプリ操作)
-            print(f"[action] {action_id} (未実装スタブ) mode={self.mode}", flush=True)
+            # TODO(#5): claude-app へキーストローク送出
+            print(f"[action] {action_id} -> claude-app 送出 (未実装)", flush=True)
 
     def _resolve_selected_or_oldest(self, result: str):
         """選択中エージェントの保留を優先、なければ最古の保留を解決。"""
@@ -400,9 +404,8 @@ async def mode_daemon(app):
                     cand = _mode_from_frontmost(front)
                     if cand in bridge.cfg["mode"].get("enabled", actions_mod.MODE_IDS):
                         bridge.set_mode(cand)
-            # claude 系モードは枠を維持 (Codexアプリの上書きに対抗)
-            if actions_mod.mode_family(bridge.mode) == "claude":
-                bridge.apply_ambient()
+            # 全モードで枠を維持・再アサート (表示は本アプリが統合管理。codex-app の公式上書きにも対抗)
+            bridge.apply_ambient()
             await asyncio.sleep(2)
         except asyncio.CancelledError:
             break
