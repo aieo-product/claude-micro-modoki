@@ -43,6 +43,7 @@ class Bridge:
         # セッション付随情報: session_id -> {cmux_workspace_id, is_cmux, ...} (SessionStart で登録, #4)
         self.session_info: dict[str, dict] = {}
         self.selected_agent = None  # 選択中エージェントキー index
+        self._led_state: dict[int, str] = {}  # index -> 最後に書いた LED 状態 (HID 重複書き込み抑止 #9)
         self.last_raw_key: dict | None = None   # キー学習・デバッグ表示用
         self._learn_future: asyncio.Future | None = None
         # モード状態 (issue #11): 4モードのいずれか。auto_mode=True なら前面アプリで自動切替
@@ -62,9 +63,11 @@ class Bridge:
             self.loop.call_soon_threadsafe(self._reassert_display)
 
     def _reassert_display(self):
-        """(再)接続時のみ枠とセッション LED を一度再アサート（常時再送しない=軽量）。"""
+        """(再)接続時のみ枠とセッション LED を一度再アサート（常時再送しない=軽量）。
+        デバイスは状態を失っているので LED キャッシュをクリアして強制再書き込みする。"""
+        self._led_state.clear()
         self.apply_ambient()
-        for sid, idx in self.sessions.items():
+        for idx in self.sessions.values():
             self.set_agent_led(idx, "idle")
 
     # ---- HID コールバック (リーダースレッドから呼ばれる) ----
@@ -144,10 +147,16 @@ class Bridge:
             if i not in used:
                 self.sessions[session_id] = i
                 return i
-        # 満杯: 最も古いセッションのキーを奪う (LRU)
-        oldest = next(iter(self.sessions))
-        idx = self.sessions.pop(oldest)
-        self.session_info.pop(oldest, None)
+        # 満杯: 承認保留中/選択中でない最古のセッションを追い出す (#1: 保留中キーを奪わない)
+        busy = {r["agent_index"] for r in self.pending.values() if not r["future"].done()}
+        victim = next((s for s, i in self.sessions.items()
+                       if i not in busy and i != self.selected_agent), None)
+        if victim is None:
+            victim = next(iter(self.sessions))  # 全キーが多忙: やむなく最古
+        idx = self.sessions.pop(victim)
+        # session_info はエビクション時に消さない (#7: 再活性化で focus 情報を失わない。SessionEnd で解放)
+        if idx == self.selected_agent:
+            self.selected_agent = None  # #2: 奪ったキーが選択中なら選択解除
         self.sessions[session_id] = idx
         return idx
 
@@ -166,18 +175,26 @@ class Bridge:
         return idx
 
     def release_session(self, session_id: str):
-        """SessionEnd: キー解放 + LED 消灯。"""
+        """SessionEnd: キー解放 + LED 消灯 + 選択解除。"""
         idx = self.sessions.pop(session_id, None)
         self.session_info.pop(session_id, None)
         if idx is not None:
+            if self.selected_agent == idx:
+                self.selected_agent = None  # #2: 解放したキーの選択を残さない
             self.set_agent_led(idx, "off")
             print(f"[session] end {session_id} (AG{idx-1} 解放)", flush=True)
 
     def notify_session(self, session_id: str, state: str):
-        """Notification/Stop: 該当セッションのキー LED を状態表示に更新。"""
+        """Notification/Stop: 該当セッションのキー LED を更新。
+        承認保留(pending)中のキーは上書きしない (#8: 良性の通知で承認表示を消さない)。"""
         idx = self.sessions.get(session_id)
-        if idx is not None:
-            self.set_agent_led(idx, state)
+        if idx is None:
+            return
+        has_pending = any(r["agent_index"] == idx and not r["future"].done()
+                          for r in self.pending.values())
+        if has_pending:
+            return  # 承認待ち LED を優先
+        self.set_agent_led(idx, state)
 
     # ---- モード制御 (issue #7 → #11: 4モード) ----
 
@@ -202,7 +219,10 @@ class Bridge:
                                        effect=effect, speed=speed)
 
     def set_agent_led(self, index: int, state: str):
-        """LED/エージェント表示は全モードで本アプリが制御（表示統合）。codex-app 含む。"""
+        """LED/エージェント表示は全モードで本アプリが制御。同一状態なら HID 書き込みを省く (#9 軽量)。"""
+        if index is None or self._led_state.get(index) == state:
+            return
+        self._led_state[index] = state
         self.adapter.set_agent_led(index, state)
 
     # ---- エージェントキー: 選択 + 前面化 (issue #4) ----
