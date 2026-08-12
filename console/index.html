@@ -40,6 +40,17 @@
   .mode-badge.claude { background: var(--accent); }
   .mode-badge.codex { background: #0A84FF; }
   .mode-badge.auto-on::after { content: " · auto"; font-weight: 500; opacity: .85; }
+  .mode-btn { font-size: 12px; padding: 5px 10px; }
+  .mode-btn.active.claude { background: var(--accent); color:#fff; border-color: var(--accent); }
+  .mode-btn.active.codex { background: #0A84FF; color:#fff; border-color: #0A84FF; }
+  /* スコープバッジ (共通/claude/codex) */
+  .scope-badge { display:inline-block; font-size:10px; font-weight:700; padding:1px 6px; border-radius:5px; color:#fff; }
+  .scope-common { background:#6B7280; } .scope-claude { background: var(--accent); } .scope-codex { background:#0A84FF; }
+  /* アイコンピッカー */
+  .icon-picker { display:grid; grid-template-columns: repeat(10, 1fr); gap:4px; max-height:120px; overflow-y:auto; padding:8px; background:var(--input); border-radius:10px; }
+  .icon-opt { font-size:18px; text-align:center; padding:4px 0; border-radius:6px; cursor:pointer; border:2px solid transparent; }
+  .icon-opt:hover { background: var(--bg); }
+  .icon-opt.sel { border-color: var(--accent); background: var(--bg); }
   select, input[type=number] {
     font: inherit; padding: 5px 10px; border-radius: 8px;
     border: 1px solid var(--border); background: var(--input); color: var(--text);
@@ -72,7 +83,11 @@
   }
   .k:hover { box-shadow: 0 0 0 2px var(--accent); }
   .k .role { font-size: 11px; font-weight: 600; color: var(--text); }
-  .k.agent .role { color: var(--accent); }
+  .k .kicon { font-size: 20px; line-height: 1; }
+  .k.agent { background: linear-gradient(180deg, #F6DFD3 0%, var(--card) 60%); border-color: var(--accent); }
+  .k.agent .role { color: var(--accent); font-weight: 700; }
+  .k.agent .aglabel { font-size: 8px; font-weight: 800; letter-spacing: .08em; color: var(--accent); }
+  .k.action { border-color: var(--border); }
   .k.accept .role { color: var(--green); }
   .k.deny .role { color: var(--red); }
   .k.round {
@@ -141,13 +156,9 @@
   <div class="row">
     <div>
       <div class="label">モード <span id="mode-badge" class="mode-badge">—</span></div>
-      <div class="desc">枠(アンビエントリング)の色で表示: claude=オレンジ / codex=青。ACT12 キーでも切替</div>
+      <div class="desc">枠の色=AI系統(claude=コーラル/codex=青)・エフェクト=文脈(app=点灯/cmux=呼吸)。ACT12: タップ=claude/codex切替・ダブルタップ=アプリ/cmux切替・長押し=auto。<b>codex-app=原作パススルー（公式が処理）／ cmux-codex=本アプリ設定で動作</b></div>
     </div>
-    <div style="display:flex;align-items:center;gap:8px">
-      <button id="mode-claude">claude</button>
-      <button id="mode-codex">codex</button>
-      <button id="mode-auto">auto</button>
-    </div>
+    <div id="mode-buttons" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end"></div>
   </div>
   <div class="row">
     <div><div class="label">明るさ</div><div class="desc">Codex Micro のすべての照明の明るさを調整します</div></div>
@@ -171,7 +182,7 @@
     <div class="pad" id="pad"></div>
   </div>
   <div class="row">
-    <div class="desc">キーをクリックして役割を割り当てます。「キー学習」で実機のキーと紐付けます。紫 = エージェントキー（セッション別承認）。</div>
+    <div class="desc">キーをクリックして役割・アイコンを割り当てます。<b style="color:var(--accent)">コーラル帯=エージェントキー</b>（選択＋前面化）、アイコン表示=アクションキー。</div>
     <div class="value" id="last-key">—</div>
   </div>
 </div>
@@ -181,18 +192,6 @@
 
 <h2>オプション</h2>
 <div class="card">
-  <div class="row">
-    <div><div class="label">タップ</div><div class="desc">エージェントキーを 1 回押したときの動作</div></div>
-    <select id="cfg-g-tap" class="gesture"></select>
-  </div>
-  <div class="row">
-    <div><div class="label">ダブルタップ</div><div class="desc">素早く 2 回押したときの動作</div></div>
-    <select id="cfg-g-double" class="gesture"></select>
-  </div>
-  <div class="row">
-    <div><div class="label">長押し</div><div class="desc">押し続けたときの動作</div></div>
-    <select id="cfg-g-long" class="gesture"></select>
-  </div>
   <div class="row">
     <div><div class="label">エージェントキー</div><div class="desc">6 つのエージェントキーがフォローする対象を選択します</div></div>
     <select id="cfg-agentmode"><option value="recent">最近のセッション</option></select>
@@ -208,23 +207,27 @@
 <div class="overlay" id="overlay">
   <div class="modal">
     <h3 id="m-title">キーを編集</h3>
-    <div class="sub">このキーの役割と実機キーの紐付けを設定します</div>
+    <div class="sub">このキーの役割・アイコン・実機キーを設定します</div>
     <div class="field">
       <span>役割</span>
       <select id="m-role">
         <option value="none">未割り当て</option>
-        <option value="agent">エージェントキー</option>
-        <option value="accept">承認（accept）</option>
-        <option value="fallback">保留（ask に戻す）</option>
-        <option value="deny">拒否（deny）</option>
+        <option value="agent">エージェントキー（選択＋前面化）</option>
+        <option value="action">アクション</option>
       </select>
     </div>
     <div class="field" id="m-index-field">
       <span>エージェントキー番号</span>
       <select id="m-index">
-        <option>1</option><option>2</option><option>3</option>
-        <option>4</option><option>5</option><option>6</option>
+        <option value="1">1</option><option value="2">2</option><option value="3">3</option>
+        <option value="4">4</option><option value="5">5</option><option value="6">6</option>
       </select>
+    </div>
+    <div id="m-action-field" style="margin-bottom:14px">
+      <div class="field" style="margin-bottom:8px"><span>アクション</span>
+        <select id="m-action"></select>
+      </div>
+      <div id="m-icon-picker" class="icon-picker"></div>
     </div>
     <div class="learn-box" id="m-keyid">未学習（実機キー未紐付け）</div>
     <div class="actions">
@@ -239,10 +242,6 @@
 <div id="toast"></div>
 
 <script>
-const GESTURE_OPTIONS = [
-  ["accept", "承認（allow）"], ["fallback", "保留（ask）"],
-  ["deny", "拒否（deny）"], ["", "なし"],
-];
 // パッド見た目: 公式レイアウト準拠。type: stick/knob/key/wide
 const PAD_CELLS = [
   {pos:"stick", type:"stick"}, {pos:"p01", type:"key"}, {pos:"p02", type:"key"}, {pos:"enc", type:"knob"},
@@ -250,11 +249,15 @@ const PAD_CELLS = [
   {pos:"p07", type:"key"}, {pos:"p08", type:"key"}, {pos:"p09", type:"key"}, {pos:"p10", type:"key"},
   {pos:"led", type:"stick"}, {pos:"p11", type:"wide"}, {pos:"p12", type:"key"},
 ];
-const ROLE_LABEL = {agent:"AGENT", accept:"承認", fallback:"保留", deny:"拒否"};
+const SCOPE_LABEL = {common:"共通", claude:"claude専用", codex:"codex専用"};
 
 let config = null;
+let catalog = {actions:[], modes:[], icon_choices:[]};
 let editingPos = null;
 let learnedKeyId = null;
+let selectedIcon = null;
+
+const actionById = id => catalog.actions.find(a => a.id === id);
 
 const $ = id => document.getElementById(id);
 const api = async (path, opts) => {
@@ -274,6 +277,19 @@ function bindingForPos(pos) {
   return [null, null];
 }
 
+function keyContent(keyId, b) {
+  if (b.role === "agent") {
+    return `<span class="aglabel">AGENT</span><span class="role">${b.index ?? ""}</span>` +
+           `<span>${keyId ?? ""}</span>`;
+  }
+  if (b.role === "action") {
+    const a = actionById(b.action);
+    const icon = b.icon || a?.icon || "•";
+    return `<span class="kicon">${icon}</span><span>${a?.label ?? b.action ?? ""}</span>`;
+  }
+  return `<span class="dot"></span>`;
+}
+
 function renderPad() {
   const pad = $("pad");
   pad.innerHTML = "";
@@ -283,11 +299,9 @@ function renderPad() {
     if (cell.type === "knob") { el.className = "k round knob"; pad.appendChild(el); continue; }
     el.className = "k" + (cell.type === "wide" ? " wide" : "");
     const [keyId, b] = bindingForPos(cell.pos);
-    if (b && b.role !== "none") {
+    if (b && b.role && b.role !== "none") {
       el.classList.add(b.role);
-      const idx = b.role === "agent" ? " " + (b.index ?? "") : "";
-      el.innerHTML = `<span class="role">${ROLE_LABEL[b.role] ?? b.role}${idx}</span>` +
-                     `<span>${keyId ?? ""}</span>`;
+      el.innerHTML = keyContent(keyId, b);
     } else {
       el.classList.add("unbound");
       el.innerHTML = `<span class="dot"></span>`;
@@ -298,21 +312,63 @@ function renderPad() {
   }
 }
 
+function renderActionSelect(selected) {
+  const sel = $("m-action");
+  sel.innerHTML = "";
+  for (const scope of ["common", "claude", "codex"]) {
+    const grp = document.createElement("optgroup");
+    grp.label = SCOPE_LABEL[scope];
+    for (const a of catalog.actions.filter(x => x.scope === scope)) {
+      const o = document.createElement("option");
+      o.value = a.id; o.textContent = `${a.icon}  ${a.label}`;
+      if (a.id === selected) o.selected = true;
+      grp.appendChild(o);
+    }
+    sel.appendChild(grp);
+  }
+}
+
+function renderIconPicker() {
+  const p = $("m-icon-picker");
+  p.innerHTML = "";
+  for (const ic of catalog.icon_choices) {
+    const d = document.createElement("div");
+    d.className = "icon-opt" + (ic === selectedIcon ? " sel" : "");
+    d.textContent = ic;
+    d.onclick = () => { selectedIcon = ic; renderIconPicker(); };
+    p.appendChild(d);
+  }
+}
+
+$("m-action").onchange = () => {
+  // アクション変更時、まだアイコン未選択ならそのアクションの既定アイコンに追従
+  const a = actionById($("m-action").value);
+  selectedIcon = a?.icon || selectedIcon;
+  renderIconPicker();
+};
+
 function openModal(pos) {
   editingPos = pos;
   const [keyId, b] = bindingForPos(pos);
   learnedKeyId = keyId;
   $("m-title").textContent = `キーを編集 — ${pos.toUpperCase()}`;
-  $("m-role").value = b?.role ?? "none";
-  $("m-index").value = b?.index ?? "1";
+  $("m-role").value = (b?.role && b.role !== "none") ? b.role : "none";
+  $("m-index").value = String(b?.index ?? "1");
+  const actId = b?.action || (catalog.actions[0] && catalog.actions[0].id);
+  renderActionSelect(actId);
+  selectedIcon = b?.icon || actionById(actId)?.icon || catalog.icon_choices[0];
+  renderIconPicker();
   $("m-keyid").textContent = keyId ? `実機キー: ${keyId}` : "未学習（実機キー未紐付け）";
-  updateIndexVisibility();
+  updateRoleFields();
   $("overlay").classList.add("show");
 }
 
-const updateIndexVisibility = () =>
-  $("m-index-field").style.display = $("m-role").value === "agent" ? "flex" : "none";
-$("m-role").onchange = updateIndexVisibility;
+function updateRoleFields() {
+  const r = $("m-role").value;
+  $("m-index-field").style.display = r === "agent" ? "flex" : "none";
+  $("m-action-field").style.display = r === "action" ? "block" : "none";
+}
+$("m-role").onchange = updateRoleFields;
 $("m-cancel").onclick = () => $("overlay").classList.remove("show");
 
 $("m-learn").onclick = async () => {
@@ -328,15 +384,15 @@ $("m-learn").onclick = async () => {
 
 $("m-save").onclick = () => {
   const role = $("m-role").value;
-  // この位置の既存割り当てを除去してから登録し直す
   for (const [k, b] of Object.entries(config.keys || {}))
     if (b.pos === editingPos) delete config.keys[k];
   if (role !== "none") {
     if (!learnedKeyId) { toast("先にキー学習で実機キーを紐付けてください"); return; }
-    config.keys[learnedKeyId] = {
-      pos: editingPos, role,
-      ...(role === "agent" ? {index: parseInt($("m-index").value)} : {}),
-    };
+    if (role === "agent") {
+      config.keys[learnedKeyId] = {pos: editingPos, role, index: parseInt($("m-index").value)};
+    } else {
+      config.keys[learnedKeyId] = {pos: editingPos, role: "action", action: $("m-action").value, icon: selectedIcon};
+    }
   }
   $("overlay").classList.remove("show");
   renderPad();
@@ -344,11 +400,6 @@ $("m-save").onclick = () => {
 };
 
 function renderOptions() {
-  for (const g of ["tap", "double", "long"]) {
-    const sel = $(`cfg-g-${g}`);
-    sel.innerHTML = GESTURE_OPTIONS.map(([v, l]) => `<option value="${v}">${l}</option>`).join("");
-    sel.value = config.gestures[g] ?? "";
-  }
   $("cfg-brightness").value = config.brightness;
   $("brightness-val").textContent = config.brightness + "%";
   $("cfg-autodim").value = String(config.auto_dim_minutes);
@@ -363,10 +414,6 @@ $("save").onclick = async () => {
   config.auto_dim_minutes = parseInt($("cfg-autodim").value);
   config.approval_timeout_sec = parseInt($("cfg-timeout").value);
   config.agent_keys.mode = $("cfg-agentmode").value;
-  for (const g of ["tap", "double", "long"]) {
-    const v = $(`cfg-g-${g}`).value;
-    if (v) config.gestures[g] = v; else delete config.gestures[g];
-  }
   try {
     config = await api("/api/config", {method: "PUT", body: JSON.stringify(config)});
     toast("保存しました");
@@ -389,10 +436,19 @@ function renderStatus(st) {
   $("last-key").textContent = st.last_raw_key ? `最終キー: ${st.last_raw_key.key_id}` : "—";
 
   const badge = $("mode-badge");
-  if (st.mode) {
-    badge.textContent = st.mode;
-    badge.className = "mode-badge " + st.mode + (st.auto_mode ? " auto-on" : "");
+  const md = catalog.modes.find(m => m.id === st.mode);
+  if (md) {
+    badge.textContent = md.label;
+    badge.className = "mode-badge " + md.family + (st.auto_mode ? " auto-on" : "");
   }
+  // モードボタンの active 状態更新
+  for (const btn of document.querySelectorAll("#mode-buttons .mode-btn")) {
+    const m = catalog.modes.find(x => x.id === btn.dataset.mode);
+    btn.classList.toggle("active", !st.auto_mode && btn.dataset.mode === st.mode);
+    if (m) { btn.classList.toggle("claude", m.family === "claude"); btn.classList.toggle("codex", m.family === "codex"); }
+  }
+  const autoBtn = document.querySelector("#mode-buttons .mode-auto");
+  if (autoBtn) autoBtn.classList.toggle("active", st.auto_mode);
 
   const card = $("pending-card");
   if (!st.pending.length) {
@@ -423,13 +479,27 @@ async function setMode(body) {
   try { await api("/api/mode", {method: "POST", body: JSON.stringify(body)}); poll(); }
   catch (e) { toast("失敗: " + e.message); }
 }
-$("mode-claude").onclick = () => setMode({mode: "claude"});
-$("mode-codex").onclick = () => setMode({mode: "codex"});
-$("mode-auto").onclick = () => setMode({auto: true});
+
+function renderModeButtons() {
+  const wrap = $("mode-buttons");
+  wrap.innerHTML = "";
+  for (const m of catalog.modes) {
+    const b = document.createElement("button");
+    b.className = "mode-btn"; b.dataset.mode = m.id; b.textContent = m.label;
+    b.onclick = () => setMode({mode: m.id});
+    wrap.appendChild(b);
+  }
+  const auto = document.createElement("button");
+  auto.className = "mode-btn mode-auto"; auto.textContent = "auto";
+  auto.onclick = () => setMode({auto: true});
+  wrap.appendChild(auto);
+}
 
 let poll;
 async function init() {
+  catalog = await api("/api/actions");
   config = await api("/api/config");
+  renderModeButtons();
   renderPad();
   renderOptions();
   poll = async () => {

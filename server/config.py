@@ -12,8 +12,7 @@ DEFAULT_CONFIG = {
     "brightness": 100,
     # 無操作でライトオフにするまでの分数。0 = 無効
     "auto_dim_minutes": 3,
-    # ジェスチャー → 承認結果のマッピング (accept=allow / fallback=ask / deny)
-    "gestures": {"tap": "accept", "double": "fallback", "long": "deny"},
+    # tap/double/long の検出タイミング (承認はアクションキーで行うため gesture→承認マッピングは廃止)
     "timings": {"tap_max_ms": 400, "double_window_ms": 350, "long_min_ms": 600},
     # エージェントキーの割当方式: recent = 最近のセッションに自動割当 (LRU)
     "agent_keys": {"mode": "recent"},
@@ -23,19 +22,23 @@ DEFAULT_CONFIG = {
     #   role: agent(index必須) / accept / fallback / deny / none
     "keys": {},
     "device": {"vid": "0x303A", "pid": "0x8360"},
-    # claude/codex モード切替 (issue #7: A/Cハイブリッド)
-    #   toggle_key: このキーの tap でモード手動トグル / long で auto に戻す
-    #   auto: 前面アプリ監視で自動切替 (Codexアプリ前面時=codex / それ以外=claude)
-    #   ambient_*: モード表示のアンビエントリング(枠)色 packed RGB。claude=オレンジ系/codex=青系
+    # モード (issue #7 → #11: 4モード claude-app/codex-app/cmux-claude/cmux-codex)
+    #   toggle_key: tap で enabled モードを循環 / long で auto に戻す
+    #   auto: 前面アプリ監視で自動切替
+    #   enabled: 循環対象のモード。ambient は色=family(claude/codex)、エフェクト=context(app/cmux)
     "mode": {
-        "current": "claude",       # 起動時のモード
+        "current": "cmux-claude",  # 起動時のモード
         "toggle_key": "ACT12",     # マイク右隣・右下ボタン (実機確認済み)
-        "auto": True,              # 前面アプリ自動切替を有効化
-        "codex_app": "ChatGPT",    # 前面アプリ名がこれなら codex
-        "ambient_claude": 0xD97757,  # Claude コーラル (オレンジ系)
-        "ambient_codex": 0x0A84FF,   # 青系
+        "auto": True,              # 前面アプリ自動切替
+        "enabled": ["claude-app", "codex-app", "cmux-claude", "cmux-codex"],
+        "codex_app": "ChatGPT",    # この前面アプリ名なら codex 系
+        "cmux_app": "cmux",        # この前面アプリ名なら cmux 系
+        "ambient_claude": 0xD97757,  # Claude コーラル (family=claude)
+        "ambient_codex": 0x0A84FF,   # 青 (family=codex)
         "ambient_brightness": 0.5,
     },
+    # cmux CLI パス (タブ制御・docs/cmux-integration.md)
+    "cmux_cli": "/Applications/cmux.app/Contents/Resources/bin/cmux",
 }
 
 _lock = threading.Lock()
