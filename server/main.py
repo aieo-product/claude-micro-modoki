@@ -19,6 +19,7 @@ import time
 
 from aiohttp import web
 
+from . import actions as actions_mod
 from . import config as config_mod
 from .device import HidAdapter
 
@@ -39,9 +40,12 @@ class Bridge:
         self.pending: dict[int, dict] = {}
         # セッション ⇔ エージェントキー割当 (LRU): session_id -> index(1..6)
         self.sessions: dict[str, int] = {}
+        # セッション付随情報: session_id -> {cmux_workspace_id, is_cmux, ...} (SessionStart で登録, #4)
+        self.session_info: dict[str, dict] = {}
+        self.selected_agent = None  # 選択中エージェントキー index
         self.last_raw_key: dict | None = None   # キー学習・デバッグ表示用
         self._learn_future: asyncio.Future | None = None
-        # モード状態 (issue #7): "claude" / "codex"。auto_mode=True なら前面アプリで自動切替
+        # モード状態 (issue #11): 4モードのいずれか。auto_mode=True なら前面アプリで自動切替
         self.mode = self.cfg["mode"]["current"]
         self.auto_mode = self.cfg["mode"]["auto"]
         self.adapter = HidAdapter(
@@ -70,11 +74,11 @@ class Bridge:
     def _on_gesture(self, key_id: str, gesture: str):
         if self._learn_future and not self._learn_future.done():
             return  # 学習モード中は承認操作に使わない
-        # モード切替キー (issue #7): tap でトグル / long で auto に戻す
+        # モード切替キー: tap で enabled モードを循環 / long で auto に戻す (issue #11)
         if key_id == self.cfg["mode"]["toggle_key"]:
             if gesture == "tap":
                 self.auto_mode = False
-                self.set_mode("codex" if self.mode == "claude" else "claude")
+                self.set_mode(self._next_mode())
             elif gesture == "long":
                 self.auto_mode = True  # 前面アプリ自動切替に復帰
             return
@@ -83,12 +87,18 @@ class Bridge:
             return
         role = binding["role"]
         if role == "agent":
-            result = self.cfg["gestures"].get(gesture)
-            if result:
-                self._resolve_by_agent_index(binding.get("index"), result)
-        elif role in ("accept", "fallback", "deny"):
-            # 固定ロールキーはジェスチャーによらず最古の保留要求に作用する
-            self._resolve_oldest(role)
+            # エージェントキー = 選択 + 前面化のみ (承認はしない, issue #4)
+            self.select_agent(binding.get("index"))
+        elif role == "action":
+            self.run_action(binding.get("action"), gesture)
+
+    def _next_mode(self) -> str:
+        enabled = self.cfg["mode"].get("enabled") or actions_mod.MODE_IDS
+        try:
+            i = enabled.index(self.mode)
+        except ValueError:
+            return enabled[0]
+        return enabled[(i + 1) % len(enabled)]
 
     # ---- 承認要求の解決 ----
 
@@ -119,28 +129,96 @@ class Bridge:
         self.sessions[session_id] = idx
         return idx
 
-    # ---- モード制御 (issue #7) ----
+    # ---- モード制御 (issue #7 → #11: 4モード) ----
 
     def set_mode(self, mode: str):
-        """claude/codex を切り替え、アンビエントリング(枠)の色を更新する。"""
-        if mode not in ("claude", "codex") or mode == self.mode:
-            self.apply_ambient()  # 同一モードでも枠を再アサート
+        """4モードを切り替え、枠(アンビエント)を color=family / effect=context で更新。"""
+        if mode not in actions_mod.MODE_IDS:
+            self.apply_ambient()
             return
-        self.mode = mode
-        print(f"[mode] -> {mode}", flush=True)
+        if mode != self.mode:
+            self.mode = mode
+            print(f"[mode] -> {mode}", flush=True)
         self.apply_ambient()
 
     def apply_ambient(self):
-        """現在モードのアンビエント色を枠に反映。claude=オレンジ / codex=青。"""
+        """枠色=family(claude=コーラル/codex=青)、エフェクト=context(app=solid/cmux=breath)。"""
         m = self.cfg["mode"]
-        color = m["ambient_codex"] if self.mode == "codex" else m["ambient_claude"]
-        self.adapter.set_ambient_color(color, brightness=m["ambient_brightness"])
+        family = actions_mod.mode_family(self.mode)
+        context = actions_mod.mode_context(self.mode)
+        color = m["ambient_codex"] if family == "codex" else m["ambient_claude"]
+        # 4=breath(cmux) / 1=solid(app)。device.EFFECT と一致
+        effect = 4 if context == "cmux" else 1
+        speed = 0.35 if context == "cmux" else 0.0
+        self.adapter.set_ambient_color(color, brightness=m["ambient_brightness"],
+                                       effect=effect, speed=speed)
 
     def set_agent_led(self, index: int, state: str):
-        """codex モードでは Codex アプリに LED を譲るため、承認 LED は書き込まない。"""
-        if self.mode == "codex":
+        """codex 系モードでは Codex アプリに LED を譲るため承認 LED を書き込まない。"""
+        if actions_mod.mode_family(self.mode) == "codex":
             return
         self.adapter.set_agent_led(index, state)
+
+    # ---- エージェントキー: 選択 + 前面化 (issue #4) ----
+
+    def select_agent(self, index):
+        """エージェントキー押下: セッションを選択し、そのウィンドウ/タブを前面化。"""
+        self.selected_agent = index
+        sid = next((s for s, i in self.sessions.items() if i == index), None)
+        info = self.session_info.get(sid, {}) if sid else {}
+        print(f"[agent] select index={index} session={sid} ws={info.get('cmux_workspace_id')}", flush=True)
+        if self.loop:
+            self.loop.create_task(self._focus_session(info))
+
+    async def _focus_session(self, info: dict):
+        """cmux モードは CLI でタブ選択、app モードはアプリ前面化。"""
+        context = actions_mod.mode_context(self.mode)
+        try:
+            if context == "cmux" and info.get("cmux_workspace_id"):
+                cli = self.cfg.get("cmux_cli")
+                ws = info["cmux_workspace_id"]
+                await self._run(cli, "workspace-action", "--action", "select", "--workspace", ws)
+                await self._run(cli, "focus-window", "--window", "window:1")
+            else:
+                app = "Claude" if actions_mod.mode_family(self.mode) == "claude" else self.cfg["mode"]["codex_app"]
+                await self._run("open", "-a", app)
+        except Exception as e:
+            print(f"[agent] focus 失敗: {e}", flush=True)
+
+    async def _run(self, *argv):
+        proc = await asyncio.create_subprocess_exec(
+            *argv, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+        await proc.communicate()
+
+    # ---- アクションキー実行 (issue #5, 実処理は順次実装) ----
+
+    def run_action(self, action_id, gesture):
+        scope = actions_mod.action_scope(action_id)
+        if scope is None:
+            return
+        family = actions_mod.mode_family(self.mode)
+        # scope がモードに合わない専用アクションは無視 (共通は常に可)
+        if scope != "common" and scope != family:
+            print(f"[action] {action_id} はモード({self.mode})対象外", flush=True)
+            return
+        if action_id == "approve":
+            self._resolve_selected_or_oldest("accept")
+        elif action_id == "reject":
+            self._resolve_selected_or_oldest("deny")
+        elif action_id == "hold":
+            self._resolve_selected_or_oldest("fallback")
+        else:
+            # TODO(#5): 各アクションの実処理 (キーストローク送出/アプリ操作)
+            print(f"[action] {action_id} (未実装スタブ) mode={self.mode}", flush=True)
+
+    def _resolve_selected_or_oldest(self, result: str):
+        """選択中エージェントの保留を優先、なければ最古の保留を解決。"""
+        if self.selected_agent is not None:
+            for req in sorted(self.pending.values(), key=lambda r: r["created"]):
+                if req["agent_index"] == self.selected_agent and not req["future"].done():
+                    req["future"].set_result(result)
+                    return
+        self._resolve_oldest(result)
 
 
 bridge = Bridge()
@@ -202,15 +280,25 @@ async def handle_status(request: web.Request):
         "last_raw_key": bridge.last_raw_key,
         "mode": bridge.mode,
         "auto_mode": bridge.auto_mode,
+        "selected_agent": bridge.selected_agent,
+    })
+
+
+async def handle_actions(request: web.Request):
+    """アクションカタログとモード定義を返す (console のキー設定 UI 用, #5/#12)。"""
+    return web.json_response({
+        "actions": actions_mod.ACTIONS,
+        "modes": actions_mod.MODES,
+        "icon_choices": actions_mod.ICON_CHOICES,
     })
 
 
 async def handle_mode(request: web.Request):
-    """コンソールからのモード操作。body: {mode: "claude"|"codex"} または {auto: true}"""
+    """コンソールからのモード操作。body: {mode: <4モードid>} または {auto: true}"""
     body = await request.json()
     if body.get("auto") is True:
         bridge.auto_mode = True
-    elif body.get("mode") in ("claude", "codex"):
+    elif body.get("mode") in actions_mod.MODE_IDS:
         bridge.auto_mode = False
         bridge.set_mode(body["mode"])
     return web.json_response({"mode": bridge.mode, "auto_mode": bridge.auto_mode})
@@ -268,20 +356,35 @@ async def _frontmost_app() -> str | None:
         return None
 
 
+def _mode_from_frontmost(front: str) -> str:
+    """前面アプリ名から4モードを推定 (issue #11)。
+    cmux 前面時は context のみ cmux にし family は現状維持 (cmux内のAI種別は前面名で判別不可)。"""
+    m = bridge.cfg["mode"]
+    if front == m.get("cmux_app"):
+        fam = actions_mod.mode_family(bridge.mode)
+        return f"cmux-{fam}"
+    if front == m.get("codex_app"):
+        return "codex-app"
+    if "Claude" in front:
+        return "claude-app"
+    return bridge.mode  # 不明な前面アプリでは維持
+
+
 async def mode_daemon(app):
     """auto モード時に前面アプリでモード自動切替 + 枠の色を定期再アサート。"""
-    codex_app = bridge.cfg["mode"]["codex_app"]
-    # 起動時に一度枠を反映（デバイス接続を少し待つ）
-    await asyncio.sleep(2)
+    await asyncio.sleep(2)  # デバイス接続待ち
     bridge.apply_ambient()
     while True:
         try:
             if bridge.auto_mode:
                 front = await _frontmost_app()
-                if front is not None:
-                    bridge.set_mode("codex" if front == codex_app else "claude")
-            if bridge.mode == "claude":
-                bridge.apply_ambient()  # Codexアプリ等の上書きに対し claude 時は枠を維持
+                if front:
+                    cand = _mode_from_frontmost(front)
+                    if cand in bridge.cfg["mode"].get("enabled", actions_mod.MODE_IDS):
+                        bridge.set_mode(cand)
+            # claude 系モードは枠を維持 (Codexアプリの上書きに対抗)
+            if actions_mod.mode_family(bridge.mode) == "claude":
+                bridge.apply_ambient()
             await asyncio.sleep(2)
         except asyncio.CancelledError:
             break
@@ -308,6 +411,7 @@ def create_app() -> web.Application:
     app.router.add_post("/api/learn", handle_learn)
     app.router.add_post("/api/resolve", handle_resolve)
     app.router.add_post("/api/mode", handle_mode)
+    app.router.add_get("/api/actions", handle_actions)
     app.router.add_get("/", handle_index)
     app.on_startup.append(on_startup)
     app.on_cleanup.append(on_cleanup)
