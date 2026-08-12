@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude Approval Console × Codex Micro — 設計書</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0E1420; --panel:#151D2C; --panel2:#1B2536; --line:#26324A;
+  --ink:#E6EBF4; --muted:#8593A8;
+  --amber:#E8B24A; --green:#46C077; --red:#E0584C; --purple:#9C74E8; --blue:#5585E0;
+  --disp:"Chakra Petch",sans-serif; --body:"Noto Sans JP",sans-serif; --mono:"IBM Plex Mono",monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);line-height:1.85;font-size:15px}
+a{color:var(--blue);text-decoration:none}
+a:hover,a:focus-visible{text-decoration:underline}
+:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+.wrap{max-width:1100px;margin:0 auto;padding:0 20px}
+.layout{display:grid;grid-template-columns:200px 1fr;gap:48px}
+@media(max-width:860px){.layout{grid-template-columns:1fr}}
+
+/* ---- nav rail styled as a key column ---- */
+nav{position:sticky;top:24px;align-self:start;padding-top:56px}
+@media(max-width:860px){nav{display:none}}
+nav a{display:block;font-family:var(--disp);font-size:12px;letter-spacing:.08em;color:var(--muted);
+  border:1px solid var(--line);border-radius:8px;padding:9px 12px;margin-bottom:8px;background:var(--panel)}
+nav a:hover{color:var(--ink);border-color:var(--muted);text-decoration:none}
+nav a span{font-family:var(--mono);color:var(--amber);margin-right:8px}
+
+/* ---- hero ---- */
+header{padding:64px 0 40px;border-bottom:1px solid var(--line)}
+.eyebrow{font-family:var(--mono);font-size:12px;color:var(--muted);letter-spacing:.12em}
+h1{font-family:var(--disp);font-size:clamp(26px,4.5vw,42px);line-height:1.25;font-weight:700;margin:10px 0 6px}
+h1 em{font-style:normal;color:var(--amber)}
+.sub{color:var(--muted);max-width:640px}
+.meta{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px;font-family:var(--mono);font-size:12px;color:var(--muted)}
+.meta b{color:var(--ink);font-weight:500}
+
+/* ---- LED strip (signature) ---- */
+.strip{display:flex;gap:6px;margin:26px 0 8px}
+.led{width:100%;height:14px;border-radius:4px;background:#0A0F18;border:1px solid var(--line);transition:background .4s,box-shadow .4s}
+.strip[data-state="idle"] .led{background:color-mix(in srgb,var(--blue) 35%,#0A0F18);box-shadow:0 0 8px color-mix(in srgb,var(--blue) 40%,transparent)}
+.strip[data-state="pending"] .led{background:color-mix(in srgb,var(--amber) 55%,#0A0F18);box-shadow:0 0 10px color-mix(in srgb,var(--amber) 50%,transparent)}
+.strip[data-state="allow"] .led{background:color-mix(in srgb,var(--green) 55%,#0A0F18);box-shadow:0 0 10px color-mix(in srgb,var(--green) 50%,transparent)}
+.strip[data-state="deny"] .led{background:color-mix(in srgb,var(--red) 55%,#0A0F18);box-shadow:0 0 10px color-mix(in srgb,var(--red) 50%,transparent)}
+.strip[data-state="hold"] .led{background:color-mix(in srgb,var(--purple) 55%,#0A0F18);box-shadow:0 0 10px color-mix(in srgb,var(--purple) 50%,transparent)}
+.legend{display:flex;flex-wrap:wrap;gap:6px}
+.legend button{font-family:var(--mono);font-size:11px;letter-spacing:.05em;color:var(--muted);background:var(--panel);
+  border:1px solid var(--line);border-radius:6px;padding:5px 10px;cursor:pointer}
+.legend button[aria-pressed="true"]{color:var(--ink);border-color:var(--muted)}
+.legend i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px;vertical-align:baseline}
+
+/* ---- sections ---- */
+section{padding:44px 0;border-bottom:1px solid var(--line)}
+h2{font-family:var(--disp);font-size:20px;font-weight:600;margin-bottom:6px}
+h2 .idx{font-family:var(--mono);font-size:13px;color:var(--amber);margin-right:10px}
+h3{font-family:var(--disp);font-size:15px;font-weight:600;margin:26px 0 8px;color:var(--ink)}
+p{margin:10px 0;color:#C4CCDA}
+ul{margin:8px 0 8px 1.3em;color:#C4CCDA}
+li{margin:5px 0}
+code{font-family:var(--mono);font-size:.9em;background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:1px 6px}
+pre{font-family:var(--mono);font-size:12.5px;line-height:1.7;background:#0A0F18;border:1px solid var(--line);
+  border-radius:10px;padding:16px 18px;overflow-x:auto;margin:14px 0;color:#B8C4D8}
+pre b{color:var(--amber);font-weight:500}
+table{width:100%;border-collapse:collapse;margin:14px 0;font-size:13.5px}
+th,td{border:1px solid var(--line);padding:9px 12px;text-align:left;vertical-align:top}
+th{font-family:var(--disp);font-size:12px;letter-spacing:.06em;color:var(--muted);background:var(--panel);font-weight:600}
+td{color:#C4CCDA}
+.tag{font-family:var(--mono);font-size:11px;border-radius:4px;padding:2px 7px;border:1px solid}
+.tag.g{color:var(--green);border-color:var(--green)}
+.tag.a{color:var(--amber);border-color:var(--amber)}
+.tag.r{color:var(--red);border-color:var(--red)}
+.tag.p{color:var(--purple);border-color:var(--purple)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin:14px 0}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:720px){.grid2{grid-template-columns:1fr}}
+footer{padding:32px 0 56px;color:var(--muted);font-family:var(--mono);font-size:12px}
+@media(prefers-reduced-motion:no-preference){
+  .strip[data-state="pending"] .led{animation:pulse 1.2s ease-in-out infinite alternate}
+  @keyframes pulse{from{filter:brightness(.75)}to{filter:brightness(1.15)}}
+}
+</style>
+</head>
+<body>
+<div class="wrap"><div class="layout">
+<nav aria-label="目次">
+  <a href="#overview"><span>01</span>概要</a>
+  <a href="#arch"><span>02</span>システム構成</a>
+  <a href="#components"><span>03</span>コンポーネント</a>
+  <a href="#protocol"><span>04</span>プロトコル</a>
+  <a href="#led"><span>05</span>LED仕様</a>
+  <a href="#security"><span>06</span>セキュリティ</a>
+  <a href="#risk"><span>07</span>リスク</a>
+  <a href="#milestone"><span>08</span>マイルストーン</a>
+</nav>
+<main>
+
+<header>
+  <p class="eyebrow">DESIGN DOC / aieo-product / rev 0.1 — 2026-08-12</p>
+  <h1>Claude Approval Console <em>×</em> Codex Micro</h1>
+  <p class="sub">Claude Code の承認操作とエージェント状態表示を Codex Micro（Work Louder 製マクロパッド）の物理キーと LED に移設する。<code>verylowfreq/m5stack_claudecode_approval_console</code>（MIT）を fork し、デバイス層を HID に差し替える改修の設計書。</p>
+  <div class="strip" id="strip" data-state="pending" aria-hidden="true">
+    <span class="led"></span><span class="led"></span><span class="led"></span><span class="led"></span><span class="led"></span>
+    <span class="led"></span><span class="led"></span><span class="led"></span><span class="led"></span><span class="led"></span>
+  </div>
+  <div class="legend" role="group" aria-label="LEDステート切り替え">
+    <button data-s="idle"><i style="background:var(--blue)"></i>IDLE</button>
+    <button data-s="pending" aria-pressed="true"><i style="background:var(--amber)"></i>PENDING</button>
+    <button data-s="allow"><i style="background:var(--green)"></i>ALLOW</button>
+    <button data-s="hold"><i style="background:var(--purple)"></i>HOLD</button>
+    <button data-s="deny"><i style="background:var(--red)"></i>DENY</button>
+  </div>
+  <div class="meta">
+    <span>UPSTREAM <b>verylowfreq (MIT)</b></span>
+    <span>REPO <b>aieo-product/claude-micro-modoki</b></span>
+    <span>TARGET <b>Codex Micro (kbd-1.0)</b></span>
+  </div>
+</header>
+
+<section id="overview">
+  <h2><span class="idx">01</span>概要と目的</h2>
+  <p>Claude Code はシェル実行やファイル編集の前に承認を求める。元プロジェクトはこの承認を M5Stack Core2 の画面とボタンに移した。本改修では同じ hooks 基盤を維持したまま、出力先を <b>Codex Micro の RGB LED</b>、入力元を <b>Codex Micro の物理キー</b>に置き換える。あわせて Notification / Stop フックを追加し、Codex 純正の「Agent Keys」相当のセッション状態表示を Claude Code で実現する。</p>
+  <ul>
+    <li><b>ゴール1:</b> PreToolUse の承認（allow / ask / deny）を Codex Micro のキー押下で返す</li>
+    <li><b>ゴール2:</b> セッション状態（待機・実行中・入力待ち・完了）を LED 色で常時表示する</li>
+    <li><b>ゴール3:</b> 複数 Claude Code セッションをキー単位で識別・切り替えできる</li>
+    <li><b>非ゴール:</b> Codex アプリ純正統合の複製、Claude Desktop（GUI 版）の操作</li>
+  </ul>
+</section>
+
+<section id="arch">
+  <h2><span class="idx">02</span>システム構成</h2>
+  <h3>現行（upstream）</h3>
+  <pre>Claude Code <b>--PreToolUse hook--></b> hook_client.py <b>--HTTP :35703--></b> bridge.py <b>--WebSocket :35704--></b> M5Stack Core2</pre>
+  <h3>改修後（本設計）</h3>
+  <pre>Claude Code <b>--PreToolUse / Notification / Stop--></b> hook_client.py
+      <b>--HTTP 127.0.0.1:35703--></b> bridge デーモン
+          ├─ SessionRegistry（session_id → キー番号の割当）
+          ├─ DeviceAdapter IF
+          │    ├─ HidAdapter（Codex Micro / raw HID・本命）
+          │    └─ WsAdapter（M5Stack 互換・upstream 追従用に温存）
+          └─ <b>--raw HID--></b> Codex Micro（LED 書き込み / キーイベント購読）</pre>
+  <p>デバイス層をアダプタとして抽象化することで、upstream の M5Stack 対応を壊さずに Codex Micro 対応を追加でき、将来の upstream 取り込みも容易になる。</p>
+</section>
+
+<section id="components">
+  <h2><span class="idx">03</span>コンポーネント設計</h2>
+  <div class="grid2">
+    <div class="card">
+      <h3 style="margin-top:0">hook_client.py（軽微改修）</h3>
+      <p>stdin の hook JSON を bridge へ POST し、応答を <code>hookSpecificOutput.permissionDecision</code> に変換して返す。改修点: イベント種別（PreToolUse / Notification / Stop）の透過、<code>session_id</code> の付与、ログの肥大化対策（ローテーション）。timeout・不明応答は現行どおり <b>deny にフェイルクローズ</b>。</p>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">bridge デーモン（再実装）</h3>
+      <p>現行はグローバル変数 + busy-wait の単一リクエスト前提。<code>asyncio</code> ベースに書き直し、リクエストID付きキュー、同時複数セッション、応答タイムアウト、systemd / launchd 常駐化に対応する。</p>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">HidAdapter（新規）</h3>
+      <p><code>hidapi</code>（Python）で Codex Micro の raw HID インターフェースを開き、(a) LED 状態の書き込み、(b) キー押下イベントの購読を行う。QMK raw HID（usage page 0xFF60）を想定。VIA プロトコル互換かは Phase 0 で実機検証。</p>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">SessionRegistry（新規）</h3>
+      <p>Claude Code の <code>session_id</code> と Agent Key（キー1〜6）を対応付ける。SessionStart で空きキーを割当、Stop / SessionEnd で解放。承認要求はそのセッションのキーを PENDING 色に点滅させる。</p>
+    </div>
+  </div>
+</section>
+
+<section id="protocol">
+  <h2><span class="idx">04</span>プロトコル定義</h2>
+  <h3>hook_client → bridge（HTTP POST /decision）</h3>
+  <pre>{ "event": "PreToolUse", "session_id": "…", "cwd": "…",
+  "tool_name": "Bash", "tool_input": { "command": "npm test" } }</pre>
+  <h3>bridge → hook_client（応答）</h3>
+  <pre>{ "result": "accept" | "fallback" | "deny" | "timeout" }
+<b>// accept→allow / fallback→ask / deny・timeout・不明→deny（フェイルクローズ）</b></pre>
+  <h3>bridge ⇄ Codex Micro（raw HID 64byte レポート・案）</h3>
+  <table>
+    <tr><th>方向</th><th>コマンド</th><th>ペイロード</th></tr>
+    <tr><td>PC → 鍵盤</td><td><code>0x01 SET_LED</code></td><td>key_index(1) + state(1: idle/pending/allow/hold/deny) </td></tr>
+    <tr><td>PC → 鍵盤</td><td><code>0x02 CLEAR_ALL</code></td><td>—</td></tr>
+    <tr><td>鍵盤 → PC</td><td><code>0x81 KEY_EVENT</code></td><td>key_index(1) + action(1: tap/double/long)</td></tr>
+  </table>
+  <p>純正ファームで raw HID が開放されていない場合は、Phase 4 で QMK 自前ビルドに切り替える（Work Louder のボード定義は QMK 本体にマージ済み）。</p>
+</section>
+
+<section id="led">
+  <h2><span class="idx">05</span>LED / キー割当仕様</h2>
+  <table>
+    <tr><th>状態</th><th>色</th><th>意味 / 遷移</th></tr>
+    <tr><td><span class="tag" style="color:var(--blue);border-color:var(--blue)">IDLE</span></td><td>青（微灯）</td><td>セッション割当済・待機中</td></tr>
+    <tr><td><span class="tag a">PENDING</span></td><td>黄（点滅）</td><td>PreToolUse 承認待ち。キー tap = allow、long = deny、double = ask（画面で判断）</td></tr>
+    <tr><td><span class="tag g">ALLOW</span></td><td>緑（1.5s）</td><td>承認直後のフィードバック → IDLE へ</td></tr>
+    <tr><td><span class="tag p">HOLD</span></td><td>紫（1.5s）</td><td>ask（手動確認へフォールバック）</td></tr>
+    <tr><td><span class="tag r">DENY</span></td><td>赤（1.5s）</td><td>拒否・タイムアウト → IDLE へ</td></tr>
+  </table>
+  <p>色と点滅時間は upstream ファームウェア（<code>colorForState()</code> / <code>RESULT_FLASH_MS=1500</code> / <code>BLINK_INTERVAL_MS=400</code>）の値を踏襲し、M5Stack 版と体験を揃える。承認タイムアウトは 240 秒（upstream 準拠）。</p>
+</section>
+
+<section id="security">
+  <h2><span class="idx">06</span>セキュリティ方針</h2>
+  <p>upstream の README は「ポート一致の通信を無条件に信頼する」既知の弱点を明記している。本改修では以下を必須とする。</p>
+  <ul>
+    <li>HTTP は <code>127.0.0.1</code> バインドに固定（現行は 0.0.0.0）。HID 接続は USB 直結のためネットワーク露出なし</li>
+    <li>hook_client ⇄ bridge 間に共有トークン（環境変数 <code>APPROVAL_BRIDGE_TOKEN</code>）を導入</li>
+    <li>WsAdapter を使う場合のみ 35704 を開放し、接続時トークン検証を追加</li>
+    <li>ログに <code>tool_input</code> の全文を残さない（コマンドは先頭 200 字で切り詰め）</li>
+  </ul>
+</section>
+
+<section id="risk">
+  <h2><span class="idx">07</span>リスクと未確定事項</h2>
+  <table>
+    <tr><th>#</th><th>項目</th><th>影響</th><th>対応</th></tr>
+    <tr><td>R1</td><td>Codex Micro 純正ファームが raw HID / VIA を開放していない可能性</td><td>LED 制御不可</td><td>Phase 0 で実機検証 → 不可なら QMK 自前ビルド（Phase 4）</td></tr>
+    <tr><td>R2</td><td>QMK 自前ビルド時に Codex 純正統合（Agent Keys）を失う</td><td>Codex 併用時の利便性低下</td><td>レイヤー切替で純正ファームに戻せる運用 / VIA レイヤのみ使用を優先検討</td></tr>
+    <tr><td>R3</td><td>Claude Code hooks の仕様変更（イベント名・JSON スキーマ）</td><td>承認フロー停止</td><td>スキーマ検証を hook_client に実装し、不一致時は ask にフォールバック</td></tr>
+    <tr><td>R4</td><td>複数セッション時のキー枯渇（Agent Key は 6 個）</td><td>7 セッション目以降が表示不能</td><td>LRU で割当・オーバーフローは共有キー 1 個に集約表示</td></tr>
+  </table>
+</section>
+
+<section id="milestone" style="border-bottom:none">
+  <h2><span class="idx">08</span>マイルストーン</h2>
+  <table>
+    <tr><th>Phase</th><th>内容</th><th>完了条件</th></tr>
+    <tr><td>0 検証</td><td>Codex Micro の HID 調査（VIA 認識・raw HID・LED 制御）</td><td>LED を PC から 1 色変えられる</td></tr>
+    <tr><td>1 基盤</td><td>fork・リポジトリ整備・Pages 公開・settings サンプル追加</td><td>本設計書が Pages で閲覧可能</td></tr>
+    <tr><td>2 bridge</td><td>asyncio 再実装・アダプタ IF・HidAdapter</td><td>キー押下で allow/deny が Claude Code に返る</td></tr>
+    <tr><td>3 hooks</td><td>Notification / Stop / SessionStart 対応・SessionRegistry</td><td>複数セッションの状態が LED で判別できる</td></tr>
+    <tr><td>4 firmware</td><td>（R1 該当時のみ）QMK 自前ビルド</td><td>raw HID 経由の LED 制御が可能</td></tr>
+    <tr><td>5 QA</td><td>常駐化・実運用 1 週間・README / セットアップ手順整備</td><td>日常の開発フローで安定稼働</td></tr>
+  </table>
+</section>
+
+<footer>
+  <p>aieo-product / claude-micro-modoki — based on m5stack_claudecode_approval_console © 2026 Mitsumine Suzu (MIT).<br>This document: docs/index.html (GitHub Pages).</p>
+</footer>
+
+</main>
+</div></div>
+<script>
+const strip=document.getElementById('strip');
+const btns=[...document.querySelectorAll('.legend button')];
+btns.forEach(b=>b.addEventListener('click',()=>{
+  strip.dataset.state=b.dataset.s;
+  btns.forEach(x=>x.setAttribute('aria-pressed',x===b));
+}));
+</script>
+</body>
+</html>

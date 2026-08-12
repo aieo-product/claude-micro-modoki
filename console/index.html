@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Micro 設定</title>
+<style>
+  :root {
+    --bg: #f4f4f3; --card: #ffffff; --border: #e6e6e4; --text: #1a1a1a;
+    --sub: #8a8a86; --accent: #6b6bd6; --green: #2e9e44; --red: #c8442c;
+    --amber: #b78414; --pad: #e8e6e1;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", sans-serif;
+    font-size: 14px; line-height: 1.5;
+    max-width: 860px; margin: 0 auto; padding: 40px 24px 80px;
+  }
+  h1 { font-size: 24px; font-weight: 700; margin-bottom: 24px; }
+  h2 { font-size: 15px; font-weight: 600; margin: 28px 0 10px; color: var(--text); }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; }
+  .row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; padding: 14px 18px; border-bottom: 1px solid var(--border);
+  }
+  .row:last-child { border-bottom: none; }
+  .row .label { font-weight: 500; }
+  .row .desc { color: var(--sub); font-size: 12.5px; max-width: 420px; }
+  .value { color: var(--sub); }
+  .ok { color: var(--green); } .ng { color: var(--red); } .warn { color: var(--amber); }
+  select, input[type=number] {
+    font: inherit; padding: 5px 10px; border-radius: 8px;
+    border: 1px solid var(--border); background: #f1f1ef;
+  }
+  input[type=range] { width: 140px; accent-color: #1a1a1a; }
+  button {
+    font: inherit; border: 1px solid var(--border); background: #f1f1ef;
+    border-radius: 8px; padding: 6px 14px; cursor: pointer;
+  }
+  button.primary { background: #1a1a1a; color: #fff; border-color: #1a1a1a; }
+  button.approve { background: var(--green); color: #fff; border-color: var(--green); }
+  button.hold { background: var(--accent); color: #fff; border-color: var(--accent); }
+  button.deny { background: var(--red); color: #fff; border-color: var(--red); }
+  button:disabled { opacity: .45; cursor: default; }
+
+  /* ---- パッドレイアウト ---- */
+  .pad-wrap { display: flex; justify-content: center; padding: 28px 0; }
+  .pad {
+    background: var(--pad); border-radius: 18px; padding: 14px;
+    display: grid; grid-template-columns: repeat(4, 64px); gap: 10px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.08);
+  }
+  .k {
+    height: 56px; border-radius: 12px; background: #f7f6f3;
+    border: 1px solid #dddbd5; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 2px;
+    cursor: pointer; font-size: 10px; color: var(--sub); user-select: none;
+    transition: box-shadow .1s, transform .05s;
+  }
+  .k:hover { box-shadow: 0 0 0 2px var(--accent); }
+  .k .role { font-size: 11px; font-weight: 600; color: var(--text); }
+  .k.agent .role { color: var(--accent); }
+  .k.accept .role { color: var(--green); }
+  .k.deny .role { color: var(--red); }
+  .k.round {
+    border-radius: 50%; width: 56px; justify-self: center;
+    cursor: default; background: #fcfbf9;
+  }
+  .k.knob { background: #1a1a1a; border-color: #1a1a1a; color: #777; }
+  .k.wide { grid-column: span 2; }
+  .k.flash { box-shadow: 0 0 0 3px var(--amber); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #c9c7f0; }
+  .k.unbound .dot { background: #d8d6d0; }
+
+  /* ---- 承認待ち ---- */
+  .pending-item { display: flex; align-items: center; gap: 12px; padding: 12px 18px; border-bottom: 1px solid var(--border); }
+  .pending-item:last-child { border-bottom: none; }
+  .pending-item .badge {
+    background: var(--accent); color: #fff; border-radius: 6px;
+    font-size: 11px; font-weight: 700; padding: 2px 7px; flex-shrink: 0;
+  }
+  .pending-item .info { flex: 1; min-width: 0; }
+  .pending-item .tool { font-weight: 600; }
+  .pending-item .detail {
+    color: var(--sub); font-size: 12px; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; font-family: ui-monospace, monospace;
+  }
+  .empty { padding: 18px; color: var(--sub); text-align: center; }
+
+  /* ---- モーダル ---- */
+  .overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.35);
+    display: none; align-items: center; justify-content: center; z-index: 10;
+  }
+  .overlay.show { display: flex; }
+  .modal { background: #fff; border-radius: 16px; padding: 24px; width: 400px; max-width: 92vw; }
+  .modal h3 { font-size: 17px; margin-bottom: 4px; }
+  .modal .sub { color: var(--sub); font-size: 12.5px; margin-bottom: 16px; }
+  .modal .field { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+  .modal .learn-box {
+    background: #f4f4f3; border-radius: 10px; padding: 12px; text-align: center;
+    font-family: ui-monospace, monospace; font-size: 12.5px; margin-bottom: 16px;
+  }
+  .modal .actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px; }
+
+  #toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: #1a1a1a; color: #fff; border-radius: 10px; padding: 10px 18px;
+    opacity: 0; transition: opacity .25s; pointer-events: none; z-index: 20;
+  }
+  #toast.show { opacity: 1; }
+  .savebar { margin-top: 28px; display: flex; justify-content: flex-end; }
+</style>
+</head>
+<body>
+<h1>Claude Micro</h1>
+
+<div class="card" id="status-card">
+  <div class="row"><div class="label">接続</div><div class="value" id="st-conn">確認中…</div></div>
+  <div class="row">
+    <div><div class="label">入力監視</div><div class="desc">macOS でキー入力の読み取りに必要です（ターミナル/bridge プロセスに付与）</div></div>
+    <div class="value" id="st-input">—</div>
+  </div>
+  <div class="row">
+    <div><div class="label">LED 制御</div><div class="desc">vendor プロトコル解明後に有効化されます（T0-4）</div></div>
+    <div class="value warn" id="st-led">未対応</div>
+  </div>
+  <div class="row">
+    <div><div class="label">明るさ</div><div class="desc">Codex Micro のすべての照明の明るさを調整します</div></div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <input type="range" id="cfg-brightness" min="0" max="100">
+      <span class="value" id="brightness-val">100%</span>
+    </div>
+  </div>
+  <div class="row">
+    <div><div class="label">自動調光</div><div class="desc">一定時間操作がないとライトをオフにします</div></div>
+    <select id="cfg-autodim">
+      <option value="0">オフ</option><option value="1">1 分</option>
+      <option value="3">3 分</option><option value="10">10 分</option>
+    </select>
+  </div>
+</div>
+
+<h2>レイアウト</h2>
+<div class="card">
+  <div class="pad-wrap">
+    <div class="pad" id="pad"></div>
+  </div>
+  <div class="row">
+    <div class="desc">キーをクリックして役割を割り当てます。「キー学習」で実機のキーと紐付けます。紫 = エージェントキー（セッション別承認）。</div>
+    <div class="value" id="last-key">—</div>
+  </div>
+</div>
+
+<h2>承認待ち</h2>
+<div class="card" id="pending-card"><div class="empty">保留中の承認要求はありません</div></div>
+
+<h2>オプション</h2>
+<div class="card">
+  <div class="row">
+    <div><div class="label">タップ</div><div class="desc">エージェントキーを 1 回押したときの動作</div></div>
+    <select id="cfg-g-tap" class="gesture"></select>
+  </div>
+  <div class="row">
+    <div><div class="label">ダブルタップ</div><div class="desc">素早く 2 回押したときの動作</div></div>
+    <select id="cfg-g-double" class="gesture"></select>
+  </div>
+  <div class="row">
+    <div><div class="label">長押し</div><div class="desc">押し続けたときの動作</div></div>
+    <select id="cfg-g-long" class="gesture"></select>
+  </div>
+  <div class="row">
+    <div><div class="label">エージェントキー</div><div class="desc">6 つのエージェントキーがフォローする対象を選択します</div></div>
+    <select id="cfg-agentmode"><option value="recent">最近のセッション</option></select>
+  </div>
+  <div class="row">
+    <div><div class="label">承認タイムアウト</div><div class="desc">応答がない場合は拒否として扱われます（フェイルクローズ）</div></div>
+    <div><input type="number" id="cfg-timeout" min="10" max="235" style="width:80px"> 秒</div>
+  </div>
+</div>
+
+<div class="savebar"><button class="primary" id="save">保存</button></div>
+
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <h3 id="m-title">キーを編集</h3>
+    <div class="sub">このキーの役割と実機キーの紐付けを設定します</div>
+    <div class="field">
+      <span>役割</span>
+      <select id="m-role">
+        <option value="none">未割り当て</option>
+        <option value="agent">エージェントキー</option>
+        <option value="accept">承認（accept）</option>
+        <option value="fallback">保留（ask に戻す）</option>
+        <option value="deny">拒否（deny）</option>
+      </select>
+    </div>
+    <div class="field" id="m-index-field">
+      <span>エージェントキー番号</span>
+      <select id="m-index">
+        <option>1</option><option>2</option><option>3</option>
+        <option>4</option><option>5</option><option>6</option>
+      </select>
+    </div>
+    <div class="learn-box" id="m-keyid">未学習（実機キー未紐付け）</div>
+    <div class="actions">
+      <button id="m-learn">キー学習</button>
+      <span style="flex:1"></span>
+      <button id="m-cancel">キャンセル</button>
+      <button class="primary" id="m-save">保存</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const GESTURE_OPTIONS = [
+  ["accept", "承認（allow）"], ["fallback", "保留（ask）"],
+  ["deny", "拒否（deny）"], ["", "なし"],
+];
+// パッド見た目: 公式レイアウト準拠。type: stick/knob/key/wide
+const PAD_CELLS = [
+  {pos:"stick", type:"stick"}, {pos:"p01", type:"key"}, {pos:"p02", type:"key"}, {pos:"enc", type:"knob"},
+  {pos:"p03", type:"key"}, {pos:"p04", type:"key"}, {pos:"p05", type:"key"}, {pos:"p06", type:"key"},
+  {pos:"p07", type:"key"}, {pos:"p08", type:"key"}, {pos:"p09", type:"key"}, {pos:"p10", type:"key"},
+  {pos:"led", type:"stick"}, {pos:"p11", type:"wide"}, {pos:"p12", type:"key"},
+];
+const ROLE_LABEL = {agent:"AGENT", accept:"承認", fallback:"保留", deny:"拒否"};
+
+let config = null;
+let editingPos = null;
+let learnedKeyId = null;
+
+const $ = id => document.getElementById(id);
+const api = async (path, opts) => {
+  const r = await fetch(path, {headers: {"Content-Type": "application/json"}, ...opts});
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+};
+const toast = msg => {
+  $("toast").textContent = msg;
+  $("toast").classList.add("show");
+  setTimeout(() => $("toast").classList.remove("show"), 2200);
+};
+
+function bindingForPos(pos) {
+  for (const [keyId, b] of Object.entries(config.keys || {}))
+    if (b.pos === pos) return [keyId, b];
+  return [null, null];
+}
+
+function renderPad() {
+  const pad = $("pad");
+  pad.innerHTML = "";
+  for (const cell of PAD_CELLS) {
+    const el = document.createElement("div");
+    if (cell.type === "stick") { el.className = "k round"; pad.appendChild(el); continue; }
+    if (cell.type === "knob") { el.className = "k round knob"; pad.appendChild(el); continue; }
+    el.className = "k" + (cell.type === "wide" ? " wide" : "");
+    const [keyId, b] = bindingForPos(cell.pos);
+    if (b && b.role !== "none") {
+      el.classList.add(b.role);
+      const idx = b.role === "agent" ? " " + (b.index ?? "") : "";
+      el.innerHTML = `<span class="role">${ROLE_LABEL[b.role] ?? b.role}${idx}</span>` +
+                     `<span>${keyId ?? ""}</span>`;
+    } else {
+      el.classList.add("unbound");
+      el.innerHTML = `<span class="dot"></span>`;
+    }
+    el.dataset.pos = cell.pos;
+    el.onclick = () => openModal(cell.pos);
+    pad.appendChild(el);
+  }
+}
+
+function openModal(pos) {
+  editingPos = pos;
+  const [keyId, b] = bindingForPos(pos);
+  learnedKeyId = keyId;
+  $("m-title").textContent = `キーを編集 — ${pos.toUpperCase()}`;
+  $("m-role").value = b?.role ?? "none";
+  $("m-index").value = b?.index ?? "1";
+  $("m-keyid").textContent = keyId ? `実機キー: ${keyId}` : "未学習（実機キー未紐付け）";
+  updateIndexVisibility();
+  $("overlay").classList.add("show");
+}
+
+const updateIndexVisibility = () =>
+  $("m-index-field").style.display = $("m-role").value === "agent" ? "flex" : "none";
+$("m-role").onchange = updateIndexVisibility;
+$("m-cancel").onclick = () => $("overlay").classList.remove("show");
+
+$("m-learn").onclick = async () => {
+  $("m-keyid").textContent = "実機のキーを押してください…（15 秒）";
+  try {
+    const r = await api("/api/learn", {method: "POST", body: "{}"});
+    learnedKeyId = r.key_id;
+    $("m-keyid").textContent = `実機キー: ${r.key_id}`;
+  } catch {
+    $("m-keyid").textContent = "学習タイムアウト。デバイス接続と入力監視権限を確認してください";
+  }
+};
+
+$("m-save").onclick = () => {
+  const role = $("m-role").value;
+  // この位置の既存割り当てを除去してから登録し直す
+  for (const [k, b] of Object.entries(config.keys || {}))
+    if (b.pos === editingPos) delete config.keys[k];
+  if (role !== "none") {
+    if (!learnedKeyId) { toast("先にキー学習で実機キーを紐付けてください"); return; }
+    config.keys[learnedKeyId] = {
+      pos: editingPos, role,
+      ...(role === "agent" ? {index: parseInt($("m-index").value)} : {}),
+    };
+  }
+  $("overlay").classList.remove("show");
+  renderPad();
+  toast("変更しました。「保存」で確定します");
+};
+
+function renderOptions() {
+  for (const g of ["tap", "double", "long"]) {
+    const sel = $(`cfg-g-${g}`);
+    sel.innerHTML = GESTURE_OPTIONS.map(([v, l]) => `<option value="${v}">${l}</option>`).join("");
+    sel.value = config.gestures[g] ?? "";
+  }
+  $("cfg-brightness").value = config.brightness;
+  $("brightness-val").textContent = config.brightness + "%";
+  $("cfg-autodim").value = String(config.auto_dim_minutes);
+  $("cfg-agentmode").value = config.agent_keys.mode;
+  $("cfg-timeout").value = config.approval_timeout_sec;
+}
+
+$("cfg-brightness").oninput = e => $("brightness-val").textContent = e.target.value + "%";
+
+$("save").onclick = async () => {
+  config.brightness = parseInt($("cfg-brightness").value);
+  config.auto_dim_minutes = parseInt($("cfg-autodim").value);
+  config.approval_timeout_sec = parseInt($("cfg-timeout").value);
+  config.agent_keys.mode = $("cfg-agentmode").value;
+  for (const g of ["tap", "double", "long"]) {
+    const v = $(`cfg-g-${g}`).value;
+    if (v) config.gestures[g] = v; else delete config.gestures[g];
+  }
+  try {
+    config = await api("/api/config", {method: "PUT", body: JSON.stringify(config)});
+    toast("保存しました");
+    renderPad(); renderOptions();
+  } catch (e) { toast("保存に失敗: " + e.message); }
+};
+
+function renderStatus(st) {
+  const conn = $("st-conn");
+  if (st.device.open) { conn.textContent = "接続済み"; conn.className = "value ok"; }
+  else if (st.device.found) { conn.textContent = "検出済み（open 不可）"; conn.className = "value warn"; }
+  else { conn.textContent = "未接続"; conn.className = "value ng"; }
+
+  const inp = $("st-input");
+  if (st.device.open) { inp.textContent = "許可済み"; inp.className = "value ok"; }
+  else if (st.device.error && st.device.error.includes("入力監視")) { inp.textContent = "未許可の可能性"; inp.className = "value ng"; }
+  else { inp.textContent = "—"; inp.className = "value"; }
+
+  $("st-led").textContent = st.led_control ? "有効" : "未対応";
+  $("last-key").textContent = st.last_raw_key ? `最終キー: ${st.last_raw_key.key_id}` : "—";
+
+  const card = $("pending-card");
+  if (!st.pending.length) {
+    card.innerHTML = `<div class="empty">保留中の承認要求はありません</div>`;
+    return;
+  }
+  card.innerHTML = st.pending.map(p => `
+    <div class="pending-item">
+      <span class="badge">KEY ${p.agent_index}</span>
+      <div class="info">
+        <div class="tool">${p.tool_name} <span class="value">· ${p.session_id.slice(0, 8)} · ${Math.round(p.age_sec)}s</span></div>
+        <div class="detail">${p.detail.replace(/</g, "&lt;")}</div>
+      </div>
+      <button class="approve" onclick="resolve(${p.id}, 'accept')">承認</button>
+      <button class="hold" onclick="resolve(${p.id}, 'fallback')">保留</button>
+      <button class="deny" onclick="resolve(${p.id}, 'deny')">拒否</button>
+    </div>`).join("");
+}
+
+window.resolve_ = null;
+async function resolve(id, result) {
+  try { await api("/api/resolve", {method: "POST", body: JSON.stringify({id, result})}); }
+  catch (e) { toast("失敗: " + e.message); }
+}
+window.resolve = resolve;
+
+async function init() {
+  config = await api("/api/config");
+  renderPad();
+  renderOptions();
+  const poll = async () => {
+    try { renderStatus(await api("/api/status")); } catch { /* bridge 停止中 */ }
+  };
+  poll();
+  setInterval(poll, 2000);
+}
+init();
+</script>
+</body>
+</html>

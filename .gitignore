@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+claudecode.log
+*.bundle
+*.zip
+userInput/
+config.json
+push_to_github.sh
