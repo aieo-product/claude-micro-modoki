@@ -54,15 +54,18 @@ HEARTBEAT_SEC = 30.0
 EFFECT = {"off": 0, "solid": 1, "snake": 2, "rainbow": 3,
           "breath": 4, "gradient": 5, "shallowBreath": 6}
 
-# 承認状態 → スレッドライティング (color=packed RGB, effect, speed, brightness)
-STATE_LIGHTING = {
-    "idle":    {"c": 0x0A2A6E, "e": EFFECT["solid"],  "b": 0.15, "s": 0},    # 青微灯
-    "pending": {"c": 0xFFB000, "e": EFFECT["breath"], "b": 1.0,  "s": 0.4},  # 黄点滅
-    "accept":  {"c": 0x00FF00, "e": EFFECT["solid"],  "b": 1.0,  "s": 0},    # 緑
-    "fallback": {"c": 0xB000FF, "e": EFFECT["solid"], "b": 1.0,  "s": 0},    # 紫(HOLD)
-    "deny":    {"c": 0xFF0000, "e": EFFECT["solid"],  "b": 1.0,  "s": 0},    # 赤
-    "off":     {"c": 0,        "e": EFFECT["off"],    "b": 0,    "s": 0},
+# エージェントキー状態 → 色 (本家 Codex 凡例準拠)。
+#   白=待機 / 青=Thinking / 緑=完了 / アンバー=入力が必要 / 赤=エラー / オフ=未割当
+STATE_COLOR = {
+    "idle":     0xFFFFFF,  # 白: 待機中
+    "thinking": 0x2E6BFF,  # 青: Thinking
+    "done":     0x00E000,  # 緑: 完了
+    "input":    0xE8900A,  # アンバー: 入力が必要 (承認/通知待ち)
+    "error":    0xFF0000,  # 赤: エラー
+    "off":      0x000000,  # 消灯
 }
+STATE_BRIGHTNESS = {"idle": 0.25, "thinking": 1.0, "done": 1.0,
+                    "input": 1.0, "error": 1.0, "off": 0.0}
 
 
 class HidAdapter:
@@ -101,26 +104,35 @@ class HidAdapter:
 
     # ---- LED 制御 ----
 
-    def set_agent_led(self, index: int, state: str):
-        """エージェントキー (スレッド) 1 本を状態色にする。index は 1..6、内部 thread id は 0-origin"""
-        lit = STATE_LIGHTING.get(state, STATE_LIGHTING["idle"])
-        self._rpc("v.oai.thstatus", [{"id": index - 1, "c": lit["c"], "b": lit["b"],
-                                      "e": lit["e"], "s": lit["s"]}])
+    def set_agent_rgb(self, index: int, color: int, brightness: float = 1.0,
+                      effect: int = EFFECT["solid"], speed: float = 0.0):
+        """エージェントキー(スレッド)1本を任意色にする。index は 1..6、内部 thread id は 0-origin。
+        色ループ/状態表示は bridge 側で決定し、ここは実書き込みのみ(軽量)。"""
+        self._rpc("v.oai.thstatus", [{"id": index - 1, "c": color, "b": brightness,
+                                      "e": effect, "s": speed}])
 
-    def set_all_agent_leds(self, states: dict[int, str]):
-        """複数エージェントキーを一括更新。states = {index: state}"""
-        params = []
-        for index, state in states.items():
-            lit = STATE_LIGHTING.get(state, STATE_LIGHTING["idle"])
-            params.append({"id": index - 1, "c": lit["c"], "b": lit["b"],
-                           "e": lit["e"], "s": lit["s"]})
+    def set_agents_rgb(self, items: list[dict]):
+        """複数キー一括。items=[{index,color,brightness,effect,speed}, ...] を1RPCで送る。"""
+        params = [{"id": it["index"] - 1, "c": it["color"], "b": it.get("brightness", 1.0),
+                   "e": it.get("effect", EFFECT["solid"]), "s": it.get("speed", 0.0)}
+                  for it in items]
         if params:
             self._rpc("v.oai.thstatus", params)
 
-    def set_ambient(self, state: str):
-        lit = STATE_LIGHTING.get(state, STATE_LIGHTING["off"])
-        side = {"e": lit["e"], "b": lit["b"], "s": lit["s"], "m": 0, "c": lit["c"]}
-        self._rpc("v.oai.rgbcfg", {"ambient": side, "keys": STATE_LIGHTING["off"] | {"m": 0}})
+    # 旧 API 互換 (Phase0 検証ツール用)。旧状態名 → 凡例状態にマップ
+    _LEGACY = {"idle": "idle", "pending": "input", "accept": "done",
+               "deny": "error", "fallback": "input", "off": "off"}
+
+    def set_agent_led(self, index: int, state: str):
+        st = self._LEGACY.get(state, "idle")
+        self.set_agent_rgb(index, STATE_COLOR[st], STATE_BRIGHTNESS[st],
+                           EFFECT["off"] if st == "off" else EFFECT["solid"])
+
+    def set_all_agent_leds(self, states: dict):
+        self.set_agents_rgb([
+            {"index": i, "color": STATE_COLOR[self._LEGACY.get(s, "idle")],
+             "brightness": STATE_BRIGHTNESS[self._LEGACY.get(s, "idle")]}
+            for i, s in states.items()])
 
     def set_ambient_color(self, color: int, brightness: float = 0.5,
                           effect: int = EFFECT["solid"], speed: float = 0.0):

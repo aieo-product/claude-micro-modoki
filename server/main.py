@@ -21,7 +21,7 @@ from aiohttp import web
 
 from . import actions as actions_mod
 from . import config as config_mod
-from .device import HidAdapter
+from .device import EFFECT, STATE_BRIGHTNESS, STATE_COLOR, HidAdapter
 
 HOST = "127.0.0.1"
 PORT = 35703
@@ -29,6 +29,11 @@ CONSOLE_PATH = os.path.join(os.path.dirname(__file__), "..", "console", "index.h
 TOKEN = os.environ.get("APPROVAL_BRIDGE_TOKEN", "")
 
 AGENT_KEY_COUNT = 6
+# family 色 (エージェントキーの色ループ用): claude=コーラル / codex=青。config.mode の枠色と一致
+FAMILY_COLOR = {"claude": 0xD97757, "codex": 0x0A84FF}
+# これらの状態のキーだけ「状態色⇄family色」でループ (active のみアニメ=軽量)
+ANIMATED_STATES = {"thinking", "input"}
+ANIM_INTERVAL = 0.8  # 秒
 
 
 class Bridge:
@@ -43,7 +48,10 @@ class Bridge:
         # セッション付随情報: session_id -> {cmux_workspace_id, is_cmux, ...} (SessionStart で登録, #4)
         self.session_info: dict[str, dict] = {}
         self.selected_agent = None  # 選択中エージェントキー index
-        self._led_state: dict[int, str] = {}  # index -> 最後に書いた LED 状態 (HID 重複書き込み抑止 #9)
+        # エージェントキー状態: index -> {"state", "family"}。状態機とアニメータで共有
+        self.agent_state: dict[int, dict] = {}
+        self._led_last: dict[int, tuple] = {}  # index -> 最後に書いた(color,brightness) 重複書込抑止 #9
+        self._anim_phase = False
         self.last_raw_key: dict | None = None   # キー学習・デバッグ表示用
         self._learn_future: asyncio.Future | None = None
         # モード状態 (issue #11): 4モードのいずれか。auto_mode=True なら前面アプリで自動切替
@@ -65,10 +73,11 @@ class Bridge:
     def _reassert_display(self):
         """(再)接続時のみ枠とセッション LED を一度再アサート（常時再送しない=軽量）。
         デバイスは状態を失っているので LED キャッシュをクリアして強制再書き込みする。"""
-        self._led_state.clear()
+        self._led_last.clear()
         self.apply_ambient()
-        for idx in self.sessions.values():
-            self.set_agent_led(idx, "idle")
+        for idx, st in self.agent_state.items():
+            self._write_agent_color(idx, STATE_COLOR.get(st["state"], STATE_COLOR["idle"]),
+                                    STATE_BRIGHTNESS.get(st["state"], 0.25))
 
     # ---- HID コールバック (リーダースレッドから呼ばれる) ----
 
@@ -170,7 +179,8 @@ class Bridge:
             "is_cmux": bool((info.get("env") or {}).get("is_cmux")),
             "cwd": info.get("cwd"),
         }
-        self.set_agent_led(idx, "idle")
+        # Claude Code フック由来のセッションは claude family
+        self.set_agent_state(idx, "idle", family="claude")
         print(f"[session] start {session_id} -> AG{idx-1} cmux={self.session_info[session_id]['is_cmux']}", flush=True)
         return idx
 
@@ -181,20 +191,20 @@ class Bridge:
         if idx is not None:
             if self.selected_agent == idx:
                 self.selected_agent = None  # #2: 解放したキーの選択を残さない
-            self.set_agent_led(idx, "off")
+            self.set_agent_state(idx, "off")
             print(f"[session] end {session_id} (AG{idx-1} 解放)", flush=True)
 
     def notify_session(self, session_id: str, state: str):
-        """Notification/Stop: 該当セッションのキー LED を更新。
-        承認保留(pending)中のキーは上書きしない (#8: 良性の通知で承認表示を消さない)。"""
+        """UserPromptSubmit=thinking / Notification=input / Stop=done を LED に反映。
+        承認保留(input)中のキーは Stop/done 等で上書きしない (#8)。"""
         idx = self.sessions.get(session_id)
         if idx is None:
             return
         has_pending = any(r["agent_index"] == idx and not r["future"].done()
                           for r in self.pending.values())
-        if has_pending:
-            return  # 承認待ち LED を優先
-        self.set_agent_led(idx, state)
+        if has_pending and state != "input":
+            return  # 承認待ち(input)LED を優先し、良性イベントで消さない
+        self.set_agent_state(idx, state)
 
     # ---- モード制御 (issue #7 → #11: 4モード) ----
 
@@ -218,12 +228,32 @@ class Bridge:
         self.adapter.set_ambient_color(color, brightness=m["ambient_brightness"],
                                        effect=effect, speed=speed)
 
-    def set_agent_led(self, index: int, state: str):
-        """LED/エージェント表示は全モードで本アプリが制御。同一状態なら HID 書き込みを省く (#9 軽量)。"""
-        if index is None or self._led_state.get(index) == state:
+    def set_agent_state(self, index, state: str, family: str | None = None):
+        """エージェントキーの状態を設定 (本家凡例: idle/thinking/done/input/error/off)。
+        全モードで本アプリが制御。thinking/input は animator が状態色⇄family色でループ、他は静的。"""
+        if index is None:
             return
-        self._led_state[index] = state
-        self.adapter.set_agent_led(index, state)
+        if state == "off":
+            self.agent_state.pop(index, None)
+            self._write_agent_color(index, 0, 0.0, EFFECT["off"])
+            return
+        fam = family or (self.agent_state.get(index, {}).get("family")) or "claude"
+        self.agent_state[index] = {"state": state, "family": fam}
+        # 初期色を即表示 (animated でも待たずに反映。以降 animator がトグル)
+        self._write_agent_color(index, STATE_COLOR.get(state, STATE_COLOR["idle"]),
+                                STATE_BRIGHTNESS.get(state, 0.25))
+
+    def _write_agent_color(self, index, color: int, brightness: float, effect=EFFECT["solid"]):
+        """実 HID 書き込み。同一(色,輝度)なら省く (#9)。animator も本経路で dedup 共有。"""
+        key = (color, round(brightness, 3))
+        if self._led_last.get(index) == key:
+            return
+        self._led_last[index] = key
+        self.adapter.set_agent_rgb(index, color, brightness, effect)
+
+    # 旧 API 互換の薄いラッパ (呼び出し側簡略化)
+    def set_agent_led(self, index, state: str):
+        self.set_agent_state(index, state)
 
     # ---- エージェントキー: 選択 + 前面化 (issue #4) ----
 
@@ -333,14 +363,15 @@ async def handle_decision(request: web.Request):
         "detail": tool_input, "created": time.time(),
         "future": fut, "agent_index": agent_index,
     }
-    bridge.set_agent_led(agent_index, "pending")  # codex モードでは no-op
+    bridge.set_agent_state(agent_index, "input")  # 承認待ち = 入力が必要(アンバー)
     try:
         result = await asyncio.wait_for(fut, timeout=bridge.cfg["approval_timeout_sec"])
     except asyncio.TimeoutError:
         result = "timeout"  # hook_client 側で deny に落ちる (フェイルクローズ)
     finally:
         bridge.pending.pop(req_id, None)
-        bridge.set_agent_led(agent_index, result if result != "timeout" else "idle")
+        # 承認後はツールが動く=thinking / タイムアウト(拒否)は待機に戻す
+        bridge.set_agent_state(agent_index, "idle" if result == "timeout" else "thinking")
     return web.json_response({"result": result})
 
 
@@ -358,6 +389,7 @@ async def handle_status(request: web.Request):
         ],
         "sessions": bridge.sessions,
         "session_info": bridge.session_info,
+        "agent_state": {str(i): st for i, st in bridge.agent_state.items()},
         "last_raw_key": bridge.last_raw_key,
         "mode": bridge.mode,
         "auto_mode": bridge.auto_mode,
@@ -375,7 +407,9 @@ async def handle_actions(request: web.Request):
 
 
 async def handle_event(request: web.Request):
-    """Claude Code の非承認イベント (SessionStart/Stop/SessionEnd/Notification, #4/#6)。"""
+    """Claude Code の非承認イベント → 本家凡例の状態 (#4/#6)。
+    SessionStart=idle(白) / UserPromptSubmit=thinking(青) / Notification=input(アンバー) /
+    Stop=done(緑) / SessionEnd=off。"""
     body = await request.json()
     event = body.get("event")
     sid = body.get("session_id")
@@ -383,12 +417,14 @@ async def handle_event(request: web.Request):
         return web.json_response({"ok": False, "error": "no session_id"}, status=400)
     if event == "SessionStart":
         bridge.register_session(sid, body)
-    elif event in ("SessionEnd",):
+    elif event == "SessionEnd":
         bridge.release_session(sid)
+    elif event == "UserPromptSubmit":
+        bridge.notify_session(sid, "thinking")   # 作業開始 = Thinking(青)
     elif event == "Notification":
-        bridge.notify_session(sid, "pending")   # 入力/許可待ち = 注意喚起
+        bridge.notify_session(sid, "input")      # 入力/許可待ち = アンバー
     elif event == "Stop":
-        bridge.notify_session(sid, "idle")       # 応答完了 = 待機
+        bridge.notify_session(sid, "done")       # 応答完了 = 緑
     return web.json_response({"ok": True})
 
 
@@ -490,16 +526,45 @@ async def mode_daemon(app):
             break
 
 
+async def led_animator(app):
+    """active(thinking/input)なエージェントキーを 状態色⇄family色 でループ (#6)。
+    軽量: アニメ対象が無い時は休止し HID 書き込みをしない。1トグルを1 RPC(複数キー一括)で送る。"""
+    while True:
+        try:
+            active = [(i, s) for i, s in list(bridge.agent_state.items())
+                      if s["state"] in ANIMATED_STATES]
+            if not active:
+                await asyncio.sleep(ANIM_INTERVAL)  # HID 書き込みはしない(メモリ中チェックのみ=軽量)
+                continue
+            bridge._anim_phase = not bridge._anim_phase
+            items = []
+            for i, s in active:
+                if bridge._anim_phase:
+                    color = STATE_COLOR[s["state"]]; b = STATE_BRIGHTNESS[s["state"]]
+                else:
+                    color = FAMILY_COLOR.get(s["family"], FAMILY_COLOR["claude"]); b = 1.0
+                bridge._led_last[i] = (color, round(b, 3))  # dedup と整合
+                items.append({"index": i, "color": color, "brightness": b})
+            bridge.adapter.set_agents_rgb(items)
+            await asyncio.sleep(ANIM_INTERVAL)
+        except asyncio.CancelledError:
+            break
+        except Exception:
+            await asyncio.sleep(ANIM_INTERVAL)
+
+
 async def on_startup(app):
     bridge.loop = asyncio.get_event_loop()
     bridge.adapter.start()
     app["mode_task"] = asyncio.create_task(mode_daemon(app))
+    app["led_task"] = asyncio.create_task(led_animator(app))
 
 
 async def on_cleanup(app):
-    task = app.get("mode_task")
-    if task:
-        task.cancel()
+    for k in ("mode_task", "led_task"):
+        task = app.get(k)
+        if task:
+            task.cancel()
 
 
 def create_app() -> web.Application:
