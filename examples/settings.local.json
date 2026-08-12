@@ -1,4 +1,5 @@
 {
+  "_comment": "PATH と python は各自の環境に合わせて変更。/ABSOLUTE/PATH/TO を実際の配置に。python3 は .venv 推奨 (例: /path/to/claude-micro-modoki/.venv/bin/python)",
   "hooks": {
     "PreToolUse": [
       {
@@ -9,6 +10,34 @@
             "command": "python3 /ABSOLUTE/PATH/TO/claude-micro-modoki/hook_client.py",
             "timeout": 300
           }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "python3 /ABSOLUTE/PATH/TO/claude-micro-modoki/hook_client.py", "timeout": 10 }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          { "type": "command", "command": "python3 /ABSOLUTE/PATH/TO/claude-micro-modoki/hook_client.py", "timeout": 10 }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          { "type": "command", "command": "python3 /ABSOLUTE/PATH/TO/claude-micro-modoki/hook_client.py", "timeout": 10 }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "python3 /ABSOLUTE/PATH/TO/claude-micro-modoki/hook_client.py", "timeout": 10 }
         ]
       }
     ]

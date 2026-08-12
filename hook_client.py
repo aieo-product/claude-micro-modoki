@@ -1,60 +1,136 @@
-import sys
+"""Claude Code hook → bridge クライアント (v2, issue #2/#4/#6)。
+
+- PreToolUse: 承認要求として POST /decision。**フェイルセーフ**: bridge の明示 deny/timeout は deny、
+  それ以外の失敗(不通/HTTPタイムアウト/5xx/非JSON)は "ask"(手動承認)にフォールバックし、
+  **決して auto-allow に素通りさせない**（承認ゲートが過負荷時に消えないようにする）。
+- SessionStart / Stop / SessionEnd / Notification: POST /api/event（フェイルオープン: Claude を止めない）。
+  cmux 内セッションは CMUX_WORKSPACE_ID 等を捕捉して送る（エージェントキー前面化に使用, #4）。
+"""
+
 import json
+import os
+import sys
 import traceback
-import requests
-
-bridge_addr = '127.0.0.1'
-bridge_port = 35703
-
-claude_input = "\n".join(sys.stdin.readlines())
-
-with open("claudecode.log", "a", encoding="utf-8") as f:
-    f.write(claude_input)
-
-claude_input = json.loads(claude_input)
+import urllib.error
+import urllib.request
 
 try:
-    req = requests.post(f"http://{bridge_addr}:{bridge_port}/decision", json=claude_input, timeout=240)
+    import fcntl  # ログの排他ロック用 (macOS/Linux)
+except ImportError:
+    fcntl = None
 
-except ConnectionRefusedError:
-    with open("claudecode.log", "a", encoding="utf-8") as f:
-        f.write("\n" + "Connection Refused" + "\n")
-    exit(-2)
+# 依存なし・軽量のため stdlib urllib を使用（フックは毎イベント別プロセス起動のため import を最小化）
+BRIDGE = "http://127.0.0.1:35703"
+TOKEN = os.environ.get("APPROVAL_BRIDGE_TOKEN", "")
+LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "claudecode.log")
+LOG_MAX = 512 * 1024  # 超過でローテーション(先頭を破棄)
+DECISION_TIMEOUT = 240
 
-except Exception as error:
-    errortext = traceback.format_exc()
-    with open("claudecode.log", "a", encoding="utf-8") as f:
-        f.write("\n" + errortext + "\n")
-    exit(-1)
 
-if not req.ok:
-    exit(-1)
+def log(msg: str):
+    """排他ロック下で追記。肥大時はローテーション。並行フックでも壊れない (#6)。"""
+    try:
+        with open(LOG, "a", encoding="utf-8") as f:
+            if fcntl:
+                fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+            try:
+                if f.tell() > LOG_MAX:
+                    f.seek(0)
+                    f.truncate()
+                f.write(msg + "\n")
+            finally:
+                if fcntl:
+                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+    except Exception:
+        pass
 
-else:
-    resp = req.json()
-    result = resp.get("result")
 
-    if result == 'accept':
-        permission_decision = "allow"
-        reason = "approved by bridge"
-    elif result == 'fallback':
-        permission_decision = "ask"
-        reason = "held by bridge, falling back to manual approval"
-    elif result == 'deny':
-        permission_decision = "deny"
-        reason = "denied by bridge"
-    else:
-        # 'timeout' or anything unrecognized: fail closed.
-        permission_decision = "deny"
-        reason = f"denied by bridge (result={result})"
+def post(path: str, payload: dict, timeout: float):
+    """POST JSON。urllib.error.HTTPError(4xx/5xx) / URLError(不通/タイムアウト) を送出。"""
+    body = json.dumps(payload).encode("utf-8")
+    hdr = {"Content-Type": "application/json"}
+    if TOKEN:
+        hdr["X-Bridge-Token"] = TOKEN
+    req = urllib.request.Request(BRIDGE + path, data=body, headers=hdr, method="POST")
+    return urllib.request.urlopen(req, timeout=timeout)
 
-    s = json.dumps({
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": permission_decision,
-            "permissionDecisionReason": reason
-        }
-    })
 
-    print(s)
-    exit(0)
+def emit(decision: str, reason: str):
+    print(json.dumps({"hookSpecificOutput": {
+        "hookEventName": "PreToolUse",
+        "permissionDecision": decision,
+        "permissionDecisionReason": reason}}))
+
+
+def cmux_env() -> dict:
+    return {
+        "cmux_workspace_id": os.environ.get("CMUX_WORKSPACE_ID"),
+        "cmux_tab_id": os.environ.get("CMUX_TAB_ID"),
+        "is_cmux": bool(os.environ.get("CMUX_BUNDLE_ID")),
+    }
+
+
+def handle_decision(data: dict) -> int:
+    """PreToolUse: 承認。失敗時は ask(手動)にフォールバックし auto-allow させない (#3/#4)。"""
+    ti = json.dumps(data.get("tool_input") or {}, ensure_ascii=False)
+    log(f"[PreToolUse] {data.get('tool_name')} {ti[:200]}")
+    try:
+        raw = post("/decision", data, DECISION_TIMEOUT).read()
+    except urllib.error.HTTPError as e:
+        emit("ask", f"bridge HTTP {e.code} → 手動承認")  # #3: 5xx等でも手動(auto-allowさせない)
+        return 0
+    except Exception:
+        log(traceback.format_exc()[:800])
+        emit("ask", "bridge 不通/タイムアウト → 手動承認")  # #3: fail-safe
+        return 0
+    try:
+        result = json.loads(raw).get("result")
+    except ValueError:
+        emit("ask", "bridge 非JSON応答 → 手動承認")  # #4: crashさせずfail-safe
+        return 0
+    decision, reason = {
+        "accept": ("allow", "approved by bridge"),
+        "fallback": ("ask", "held by bridge, manual approval"),
+        "deny": ("deny", "denied by bridge"),
+    }.get(result, ("deny", f"denied by bridge (result={result})"))  # timeout/不明→deny(フェイルクローズ)
+    emit(decision, reason)
+    return 0
+
+
+def handle_event(event: str, data: dict) -> int:
+    """SessionStart/Stop/SessionEnd/Notification: 状態通知。フェイルオープン。
+    ただし 401 等の失敗はログに残す（トークン不一致で全ライフサイクルが黙って落ちるのを可視化, #5）。"""
+    payload = {
+        "event": event,
+        "session_id": data.get("session_id"),
+        "cwd": data.get("cwd"),
+        "source": data.get("source"),
+        "message": data.get("message"),
+        "env": cmux_env(),
+    }
+    log(f"[{event}] session={payload['session_id']} cmux={payload['env']['is_cmux']}")
+    try:
+        post("/api/event", payload, 3).read()
+    except urllib.error.HTTPError as e:
+        # 401 等はログに残す（トークン不一致で全ライフサイクルが黙って落ちるのを可視化, #5）
+        log(f"[{event}] /api/event 失敗 HTTP {e.code}"
+            + (" (APPROVAL_BRIDGE_TOKEN 不一致の可能性)" if e.code == 401 else ""))
+    except Exception:
+        pass  # bridge 停止中でも Claude を止めない
+    return 0
+
+
+def main() -> int:
+    raw = sys.stdin.read()
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return 0
+    event = data.get("hook_event_name") or "PreToolUse"
+    if event == "PreToolUse":
+        return handle_decision(data)
+    return handle_event(event, data)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
