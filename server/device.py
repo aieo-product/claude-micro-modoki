@@ -121,6 +121,13 @@ class HidAdapter:
         side = {"e": lit["e"], "b": lit["b"], "s": lit["s"], "m": 0, "c": lit["c"]}
         self._rpc("v.oai.rgbcfg", {"ambient": side, "keys": STATE_LIGHTING["off"] | {"m": 0}})
 
+    def set_ambient_color(self, color: int, brightness: float = 0.5,
+                          effect: int = EFFECT["solid"], speed: float = 0.0):
+        """アンビエントリング(パッド外周=枠)を任意色にする。モード表示用。
+        keys(キー背面)は触らず off。エージェントキーの承認 LED は thstatus 側で別管理。"""
+        side = {"e": effect, "b": brightness, "s": speed, "m": 0, "c": color}
+        self._rpc("v.oai.rgbcfg", {"ambient": side, "keys": {"e": 0, "b": 0, "s": 0, "m": 0, "c": 0}})
+
     # 旧 IF 互換 (bridge 側が set_led(index, state) を呼ぶ)
     def set_led(self, key_index: int, state: str):
         self.set_agent_led(key_index, state)

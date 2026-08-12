@@ -6,9 +6,10 @@
 <title>Claude Micro 設定</title>
 <style>
   :root {
-    --bg: #f4f4f3; --card: #ffffff; --border: #e6e6e4; --text: #1a1a1a;
-    --sub: #8a8a86; --accent: #6b6bd6; --green: #2e9e44; --red: #c8442c;
-    --amber: #b78414; --pad: #e8e6e1;
+    /* Anthropic / Claude ブランド配色: アイボリー背景 + コーラル(クレイ)アクセント + 温かみのある黒 */
+    --bg: #F0EEE6; --card: #FBFAF6; --border: #E4E0D4; --text: #262417;
+    --sub: #8B8574; --accent: #D97757; --green: #3E9A50; --red: #BF4D3F;
+    --amber: #C0872B; --pad: #EAE7DC; --input: #F2F0E8;
   }
   * { box-sizing: border-box; margin: 0; }
   body {
@@ -17,7 +18,10 @@
     font-size: 14px; line-height: 1.5;
     max-width: 860px; margin: 0 auto; padding: 40px 24px 80px;
   }
-  h1 { font-size: 24px; font-weight: 700; margin-bottom: 24px; }
+  h1 {
+    font-family: Georgia, "Times New Roman", "Hiragino Mincho ProN", serif;
+    font-size: 26px; font-weight: 600; margin-bottom: 24px; letter-spacing: -0.01em;
+  }
   h2 { font-size: 15px; font-weight: 600; margin: 28px 0 10px; color: var(--text); }
   .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; }
   .row {
@@ -29,16 +33,24 @@
   .row .desc { color: var(--sub); font-size: 12.5px; max-width: 420px; }
   .value { color: var(--sub); }
   .ok { color: var(--green); } .ng { color: var(--red); } .warn { color: var(--amber); }
+  .mode-badge {
+    display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px;
+    border-radius: 6px; color: #fff; margin-left: 6px; vertical-align: middle;
+  }
+  .mode-badge.claude { background: var(--accent); }
+  .mode-badge.codex { background: #0A84FF; }
+  .mode-badge.auto-on::after { content: " · auto"; font-weight: 500; opacity: .85; }
   select, input[type=number] {
     font: inherit; padding: 5px 10px; border-radius: 8px;
-    border: 1px solid var(--border); background: #f1f1ef;
+    border: 1px solid var(--border); background: var(--input); color: var(--text);
   }
-  input[type=range] { width: 140px; accent-color: #1a1a1a; }
+  input[type=range] { width: 140px; accent-color: var(--accent); }
   button {
-    font: inherit; border: 1px solid var(--border); background: #f1f1ef;
+    font: inherit; border: 1px solid var(--border); background: var(--input); color: var(--text);
     border-radius: 8px; padding: 6px 14px; cursor: pointer;
   }
-  button.primary { background: #1a1a1a; color: #fff; border-color: #1a1a1a; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
   button.approve { background: var(--green); color: #fff; border-color: var(--green); }
   button.hold { background: var(--accent); color: #fff; border-color: var(--accent); }
   button.deny { background: var(--red); color: #fff; border-color: var(--red); }
@@ -52,8 +64,8 @@
     box-shadow: 0 8px 24px rgba(0,0,0,.08);
   }
   .k {
-    height: 56px; border-radius: 12px; background: #f7f6f3;
-    border: 1px solid #dddbd5; display: flex; flex-direction: column;
+    height: 56px; border-radius: 12px; background: var(--card);
+    border: 1px solid var(--border); display: flex; flex-direction: column;
     align-items: center; justify-content: center; gap: 2px;
     cursor: pointer; font-size: 10px; color: var(--sub); user-select: none;
     transition: box-shadow .1s, transform .05s;
@@ -65,13 +77,13 @@
   .k.deny .role { color: var(--red); }
   .k.round {
     border-radius: 50%; width: 56px; justify-self: center;
-    cursor: default; background: #fcfbf9;
+    cursor: default; background: var(--card);
   }
-  .k.knob { background: #1a1a1a; border-color: #1a1a1a; color: #777; }
+  .k.knob { background: #2E2A1F; border-color: #2E2A1F; color: #A8A28F; }
   .k.wide { grid-column: span 2; }
   .k.flash { box-shadow: 0 0 0 3px var(--amber); }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: #c9c7f0; }
-  .k.unbound .dot { background: #d8d6d0; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); opacity: .55; }
+  .k.unbound .dot { background: var(--sub); opacity: .4; }
 
   /* ---- 承認待ち ---- */
   .pending-item { display: flex; align-items: center; gap: 12px; padding: 12px 18px; border-bottom: 1px solid var(--border); }
@@ -94,19 +106,19 @@
     display: none; align-items: center; justify-content: center; z-index: 10;
   }
   .overlay.show { display: flex; }
-  .modal { background: #fff; border-radius: 16px; padding: 24px; width: 400px; max-width: 92vw; }
+  .modal { background: var(--card); border-radius: 16px; padding: 24px; width: 400px; max-width: 92vw; }
   .modal h3 { font-size: 17px; margin-bottom: 4px; }
   .modal .sub { color: var(--sub); font-size: 12.5px; margin-bottom: 16px; }
   .modal .field { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
   .modal .learn-box {
-    background: #f4f4f3; border-radius: 10px; padding: 12px; text-align: center;
+    background: var(--input); border-radius: 10px; padding: 12px; text-align: center;
     font-family: ui-monospace, monospace; font-size: 12.5px; margin-bottom: 16px;
   }
   .modal .actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px; }
 
   #toast {
     position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
-    background: #1a1a1a; color: #fff; border-radius: 10px; padding: 10px 18px;
+    background: #2E2A1F; color: #F0EEE6; border-radius: 10px; padding: 10px 18px;
     opacity: 0; transition: opacity .25s; pointer-events: none; z-index: 20;
   }
   #toast.show { opacity: 1; }
@@ -125,6 +137,17 @@
   <div class="row">
     <div><div class="label">LED 制御</div><div class="desc">vendor プロトコル解明後に有効化されます（T0-4）</div></div>
     <div class="value warn" id="st-led">未対応</div>
+  </div>
+  <div class="row">
+    <div>
+      <div class="label">モード <span id="mode-badge" class="mode-badge">—</span></div>
+      <div class="desc">枠(アンビエントリング)の色で表示: claude=オレンジ / codex=青。ACT12 キーでも切替</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <button id="mode-claude">claude</button>
+      <button id="mode-codex">codex</button>
+      <button id="mode-auto">auto</button>
+    </div>
   </div>
   <div class="row">
     <div><div class="label">明るさ</div><div class="desc">Codex Micro のすべての照明の明るさを調整します</div></div>
@@ -365,6 +388,12 @@ function renderStatus(st) {
   $("st-led").textContent = st.led_control ? "有効" : "未対応";
   $("last-key").textContent = st.last_raw_key ? `最終キー: ${st.last_raw_key.key_id}` : "—";
 
+  const badge = $("mode-badge");
+  if (st.mode) {
+    badge.textContent = st.mode;
+    badge.className = "mode-badge " + st.mode + (st.auto_mode ? " auto-on" : "");
+  }
+
   const card = $("pending-card");
   if (!st.pending.length) {
     card.innerHTML = `<div class="empty">保留中の承認要求はありません</div>`;
@@ -390,11 +419,20 @@ async function resolve(id, result) {
 }
 window.resolve = resolve;
 
+async function setMode(body) {
+  try { await api("/api/mode", {method: "POST", body: JSON.stringify(body)}); poll(); }
+  catch (e) { toast("失敗: " + e.message); }
+}
+$("mode-claude").onclick = () => setMode({mode: "claude"});
+$("mode-codex").onclick = () => setMode({mode: "codex"});
+$("mode-auto").onclick = () => setMode({auto: true});
+
+let poll;
 async function init() {
   config = await api("/api/config");
   renderPad();
   renderOptions();
-  const poll = async () => {
+  poll = async () => {
     try { renderStatus(await api("/api/status")); } catch { /* bridge 停止中 */ }
   };
   poll();
