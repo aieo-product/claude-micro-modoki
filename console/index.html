@@ -55,6 +55,16 @@
   .action-opt.sel { border-color: var(--accent); background: var(--bg); }
   .action-opt .a-icon { font-size:22px; line-height:1; }
   .action-opt .a-label { font-size:10.5px; color:var(--text); line-height:1.15; }
+  /* 入力コントロール設定 (#34) */
+  .mini { display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--sub); }
+  .stick-grid { display:grid; grid-template-columns: repeat(2, 1fr); gap:12px; }
+  .cfg-knob-custom { border-top:1px dashed var(--border); padding-top:10px; }
+  .switch { position:relative; display:inline-block; width:42px; height:24px; cursor:pointer; }
+  .switch input { opacity:0; width:0; height:0; }
+  .switch::before { content:""; position:absolute; inset:0; background:var(--border); border-radius:12px; transition:.2s; }
+  .switch::after { content:""; position:absolute; width:18px; height:18px; left:3px; top:3px; background:#fff; border-radius:50%; transition:.2s; }
+  .switch:has(input:checked)::before { background:var(--accent); }
+  .switch:has(input:checked)::after { transform:translateX(18px); }
   select, input[type=number] {
     font: inherit; padding: 5px 10px; border-radius: 8px;
     border: 1px solid var(--border); background: var(--input); color: var(--text);
@@ -289,11 +299,57 @@
 <div class="card">
   <div class="row">
     <div><div class="label">エージェントキー</div><div class="desc">6 つのエージェントキーがフォローする対象を選択します</div></div>
-    <select id="cfg-agentmode"><option value="recent">最近のセッション</option></select>
+    <select id="cfg-agentmode">
+      <option value="recent">最近のセッション</option>
+      <option value="manual">手動割当</option>
+    </select>
+  </div>
+  <div class="row">
+    <div><div class="label">ノブ</div><div class="desc">ノブを回して操作する対象を選択します</div></div>
+    <select id="cfg-knobmode">
+      <option value="input-nav">入力欄内の移動</option>
+      <option value="inference">推論のみ</option>
+      <option value="scroll">会話のスクロール</option>
+      <option value="custom">カスタム割り当て</option>
+    </select>
+  </div>
+  <div class="row cfg-knob-custom" id="cfg-knob-custom" style="display:none; flex-wrap:wrap; gap:8px">
+    <div class="desc" style="width:100%">回転・クリック・長押しの各操作にアクションを割当</div>
+    <label class="mini">↻ 右回転 <select id="cfg-knob-cw"></select></label>
+    <label class="mini">↺ 左回転 <select id="cfg-knob-ccw"></select></label>
+    <label class="mini">● クリック <select id="cfg-knob-click"></select></label>
+    <label class="mini">⏻ 長押し <select id="cfg-knob-long"></select></label>
+  </div>
+  <div class="row">
+    <div><div class="label">マイクキー</div><div class="desc">マイクキーの動作を選択します</div></div>
+    <select id="cfg-micmode">
+      <option value="push-to-talk">プッシュトゥトーク</option>
+      <option value="toggle">トグル</option>
+      <option value="off">オフ</option>
+    </select>
+  </div>
+  <div class="row">
+    <div><div class="label">マイクキーを個別に使用</div><div class="desc">幅広キー下の 2 スイッチを個別に割り当てます</div></div>
+    <label class="switch"><input type="checkbox" id="cfg-mic-separate"></label>
+  </div>
+  <div class="row">
+    <div><div class="label">1 回のタップで Codex にフォーカス</div><div class="desc">割り当てタスクを開き Codex ウィンドウを前面化します</div></div>
+    <label class="switch"><input type="checkbox" id="cfg-single-tap-focus"></label>
   </div>
   <div class="row">
     <div><div class="label">承認タイムアウト</div><div class="desc">応答がない場合は拒否として扱われます（フェイルクローズ）</div></div>
     <div><input type="number" id="cfg-timeout" min="10" max="235" style="width:80px"> 秒</div>
+  </div>
+</div>
+
+<h2>アナログスティック（十字）</h2>
+<div class="card">
+  <div class="desc" style="margin-bottom:10px">各方向で実行するアクションを選択します</div>
+  <div class="stick-grid">
+    <label class="mini">↑ 上 <select id="cfg-stick-up"></select></label>
+    <label class="mini">→ 右 <select id="cfg-stick-right"></select></label>
+    <label class="mini">↓ 下 <select id="cfg-stick-down"></select></label>
+    <label class="mini">← 左 <select id="cfg-stick-left"></select></label>
   </div>
 </div>
 
@@ -540,21 +596,77 @@ $("m-save").onclick = () => {
   toast("変更しました。「保存」で確定します");
 };
 
+// アクション割当用 select を全アクションで埋める（#34）
+function fillActionSelect(id, selected) {
+  const sel = $(id);
+  if (!sel) return;
+  sel.innerHTML = "";
+  for (const scope of ["common", "control", "claude", "codex"]) {
+    const actions = catalog.actions.filter(a => a.scope === scope);
+    if (!actions.length) continue;
+    const grp = document.createElement("optgroup");
+    grp.label = SCOPE_LABEL[scope] || scope;
+    for (const a of actions) {
+      const o = document.createElement("option");
+      o.value = a.id; o.textContent = `${a.icon} ${a.label}`;
+      if (a.id === selected) o.selected = true;
+      grp.appendChild(o);
+    }
+    sel.appendChild(grp);
+  }
+}
+
+function updateKnobCustomVisibility() {
+  $("cfg-knob-custom").style.display = $("cfg-knobmode").value === "custom" ? "flex" : "none";
+}
+
 function renderOptions() {
   $("cfg-brightness").value = config.brightness;
   $("brightness-val").textContent = config.brightness + "%";
   $("cfg-autodim").value = String(config.auto_dim_minutes);
   $("cfg-agentmode").value = config.agent_keys.mode;
   $("cfg-timeout").value = config.approval_timeout_sec;
+  // アナログスティック(十字)
+  const st = config.analog_stick || {};
+  fillActionSelect("cfg-stick-up", st.up);
+  fillActionSelect("cfg-stick-right", st.right);
+  fillActionSelect("cfg-stick-down", st.down);
+  fillActionSelect("cfg-stick-left", st.left);
+  // ノブ
+  const kn = config.knob || {};
+  $("cfg-knobmode").value = kn.mode || "scroll";
+  fillActionSelect("cfg-knob-cw", kn.rotate_cw);
+  fillActionSelect("cfg-knob-ccw", kn.rotate_ccw);
+  fillActionSelect("cfg-knob-click", kn.click);
+  fillActionSelect("cfg-knob-long", kn.long_press);
+  updateKnobCustomVisibility();
+  // マイクキー / オプション
+  $("cfg-micmode").value = (config.mic_key || {}).mode || "push-to-talk";
+  $("cfg-mic-separate").checked = !!(config.mic_key || {}).separate_switches;
+  $("cfg-single-tap-focus").checked = !!(config.options || {}).single_tap_focus;
 }
 
 $("cfg-brightness").oninput = e => $("brightness-val").textContent = e.target.value + "%";
+
+$("cfg-knobmode").onchange = updateKnobCustomVisibility;
 
 $("save").onclick = async () => {
   config.brightness = parseInt($("cfg-brightness").value);
   config.auto_dim_minutes = parseInt($("cfg-autodim").value);
   config.approval_timeout_sec = parseInt($("cfg-timeout").value);
   config.agent_keys.mode = $("cfg-agentmode").value;
+  // アナログスティック(十字) / ノブ / マイク / オプション (#34)
+  config.analog_stick = {
+    up: $("cfg-stick-up").value, right: $("cfg-stick-right").value,
+    down: $("cfg-stick-down").value, left: $("cfg-stick-left").value,
+  };
+  config.knob = {
+    mode: $("cfg-knobmode").value,
+    rotate_cw: $("cfg-knob-cw").value, rotate_ccw: $("cfg-knob-ccw").value,
+    click: $("cfg-knob-click").value, long_press: $("cfg-knob-long").value,
+  };
+  config.mic_key = {mode: $("cfg-micmode").value, separate_switches: $("cfg-mic-separate").checked};
+  config.options = {single_tap_focus: $("cfg-single-tap-focus").checked};
   try {
     config = await api("/api/config", {method: "PUT", body: JSON.stringify(config)});
     toast("保存しました");

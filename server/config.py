@@ -16,6 +16,26 @@ DEFAULT_CONFIG = {
     "timings": {"tap_max_ms": 400, "double_window_ms": 350, "long_min_ms": 600},
     # エージェントキーの割当方式: recent = 最近のセッションに自動割当 (LRU)
     "agent_keys": {"mode": "recent"},
+    # アナログスティック(十字): 各方向にアクション id を割当 (#34)。デバイス実行は #35。
+    "analog_stick": {
+        "up": "plan-mode",
+        "right": "forward",
+        "down": "sidebar-toggle",
+        "left": "back",
+    },
+    # ノブ(右上ダイヤル) (#34): mode=挙動プリセット。custom 時のみ rotate/click/long を使用。
+    #   mode: input-nav(入力欄内移動) / inference(推論エフォート) / scroll(会話スクロール) / custom
+    "knob": {
+        "mode": "scroll",
+        "rotate_cw": "scroll-down",
+        "rotate_ccw": "scroll-up",
+        "click": "interrupt",
+        "long_press": "plan-mode",
+    },
+    # マイクキー(幅広) (#34): mode=push-to-talk/toggle/off。separate=下2スイッチを個別割当。
+    "mic_key": {"mode": "push-to-talk", "separate_switches": False},
+    # オプション (#34)
+    "options": {"single_tap_focus": False},
     # hook_client 側タイムアウト(240s)より先に応答するためのブリッジ側タイムアウト
     "approval_timeout_sec": 230,
     # 物理キー割当: key_id ("k<reportID>:<code>") -> {pos, role, index, label}

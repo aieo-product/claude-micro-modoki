@@ -55,6 +55,14 @@ ACTIONS = [
     {"id": "scroll-up",     "label": "スクロール↑",       "icon": "🔼", "scope": "common"},
     {"id": "scroll-down",   "label": "スクロール↓",       "icon": "🔽", "scope": "common"},
     {"id": "interrupt",     "label": "割り込み (Esc)",    "icon": "⏹️", "scope": "common"},
+    # コントロール系（十字/ノブ/マイク割当用, #34。実処理は #35）
+    {"id": "forward",        "label": "進む",              "icon": "▶️", "scope": "control"},
+    {"id": "back",           "label": "前へ (戻る)",       "icon": "◀️", "scope": "control"},
+    {"id": "sidebar-toggle", "label": "サイドバー切替",    "icon": "📚", "scope": "control"},
+    {"id": "input-nav",      "label": "入力欄内の移動",    "icon": "↕️", "scope": "control"},
+    {"id": "inference-effort", "label": "推論エフォート",  "icon": "🧠", "scope": "control"},
+    {"id": "scroll-convo",   "label": "会話スクロール",    "icon": "🖱️", "scope": "control"},
+    {"id": "push-to-talk",   "label": "プッシュトゥトーク","icon": "🎙️", "scope": "control"},
     # claude 専用
     {"id": "plan-mode",     "label": "プランモード切替",  "icon": "📋", "scope": "claude"},
     {"id": "compact",       "label": "/compact",          "icon": "🗜️", "scope": "claude"},
