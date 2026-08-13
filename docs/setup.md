@@ -51,7 +51,33 @@ python3 -m venv .venv
 
 設定コンソール: http://127.0.0.1:35703/ （Claude 配色。モード切替・キー割当）
 
-## 5. Claude Code の hook 設定
+## 5. 常駐化（launchd）
+
+手順 4 で `.venv` を準備し、手動起動中の bridge があれば `Ctrl-C` で停止してから、次のスクリプトを実行します。bridge が現在のログインセッションで起動し、以後はログイン時にも自動起動します。異常終了した場合だけ再起動し、正常終了後は再起動しません。
+
+```bash
+./scripts/install_service.sh
+```
+
+生成される plist を確認するだけで、ファイル作成や launchd への登録を行わない場合は `--dry-run` を使います。
+
+```bash
+./scripts/install_service.sh --dry-run
+```
+
+- plist: `~/Library/LaunchAgents/com.claudemicro.bridge.plist`
+- 標準出力・標準エラー: `~/Library/Logs/claudemicro/bridge.log`
+- 設定コンソール: http://127.0.0.1:35703/
+
+常駐中は手順 4 の `.venv/bin/python -m server.main` を別途実行しないでください。同じポートとデバイスを使用するため競合します。手動起動に戻す場合は、先に次のスクリプトで常駐を解除します。
+
+```bash
+./scripts/uninstall_service.sh
+```
+
+アンインストールは launchd の登録と plist を削除します。ログファイルは削除しません。再び常駐させる場合はインストールスクリプトをもう一度実行してください。
+
+## 6. Claude Code の hook 設定
 
 `examples/settings.local.json` を参考に、PreToolUse hook で `hook_client.py` を呼ぶよう設定する
 （`~/.claude/settings.json` 等。パスは各自の配置に合わせる）。

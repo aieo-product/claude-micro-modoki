@@ -6,9 +6,9 @@ claudecode.log
 codexhook.log
 # codex 実行/レビューの一時ログ・レビューバンドル・実装スペック (コミットしない)
 codex-*.log
-REVIEW_BUNDLE_18.txt
-SPEC_18.md
-FIXES_18.md
+REVIEW_BUNDLE_*.txt
+SPEC_*.md
+FIXES_*.md
 # Claude Code のローカル専用設定 (permissions 等・コミットしない)
 .claude/settings.local.json
 *.bundle
