@@ -18,6 +18,7 @@ import json
 import os
 import sys
 import time
+from contextlib import suppress
 
 from aiohttp import web
 
@@ -40,6 +41,8 @@ FAMILY_COLOR = {"claude": 0xD97757, "codex": 0x0A84FF}
 # これらの状態のキーだけ「状態色⇄family色」でループ (active のみアニメ=軽量)
 ANIMATED_STATES = {"thinking", "input"}
 ANIM_INTERVAL = 0.8  # 秒
+# A stable candidate is suppressed for at most (N - 1) * poll_sec before confirmation.
+MODE_HYSTERESIS_OBSERVATIONS = 2
 
 
 class Bridge:
@@ -665,10 +668,21 @@ async def _frontmost_app() -> str | None:
             "osascript", "-e",
             'tell application "System Events" to name of first application process whose frontmost is true',
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
-        out, _ = await proc.communicate()
-        return out.decode().strip() or None
-    except (OSError, asyncio.CancelledError):
+    except OSError:
         return None
+    try:
+        out, _ = await proc.communicate()
+    except asyncio.CancelledError:
+        # asyncio does not terminate subprocesses when their waiter is cancelled.
+        # Reap osascript here so loop shutdown cannot leave an orphan behind.
+        with suppress(ProcessLookupError):
+            proc.kill()
+        with suppress(OSError, ProcessLookupError):
+            await proc.wait()
+        raise
+    except OSError:
+        return None
+    return out.decode().strip() or None
 
 
 def _mode_from_frontmost(front: str) -> str:
@@ -685,11 +699,30 @@ def _mode_from_frontmost(front: str) -> str:
     return bridge.mode  # 不明な前面アプリでは維持
 
 
+def _confirm_mode_candidate(
+        candidate: str,
+        last_candidate: str | None,
+        consecutive_observations: int) -> tuple[str | None, int, str | None]:
+    """同じモード候補が連続したときに一度だけ確定する。"""
+    if candidate == last_candidate:
+        consecutive_observations += 1
+    else:
+        last_candidate = candidate
+        consecutive_observations = 1
+    if consecutive_observations >= MODE_HYSTERESIS_OBSERVATIONS:
+        # A later manual -> auto transition must begin with a fresh streak even
+        # when it occurs entirely between two daemon polls.
+        return None, 0, candidate
+    return last_candidate, consecutive_observations, None
+
+
 async def mode_daemon(app):
     """auto モード時のみ前面アプリを監視してモード自動切替（軽量: auto オフなら osascript を叩かない）。
     枠/LED の再アサートは接続時 on_connect に移譲したので、ここでは HID 書き込みをしない。"""
     await asyncio.sleep(2)  # デバイス接続待ち（枠は on_connect で反映）
     poll_sec = bridge.cfg["mode"].get("poll_sec", 3)
+    last_candidate = None
+    candidate_observations = 0
     while True:
         try:
             if bridge.auto_mode:
@@ -697,10 +730,28 @@ async def mode_daemon(app):
                 if front:
                     cand = _mode_from_frontmost(front)
                     if cand in bridge.cfg["mode"].get("enabled", actions_mod.MODE_IDS):
-                        bridge.set_mode(cand)  # 変化時のみ apply_ambient（set_mode 内）
+                        if cand == bridge.mode:
+                            last_candidate = None
+                            candidate_observations = 0
+                        else:
+                            (last_candidate,
+                             candidate_observations,
+                             confirmed) = _confirm_mode_candidate(
+                                cand, last_candidate, candidate_observations)
+                            if confirmed is not None:
+                                # 変化時のみ apply_ambient（set_mode 内）
+                                bridge.set_mode(confirmed)
+                    else:
+                        last_candidate = None
+                        candidate_observations = 0
+                else:
+                    last_candidate = None
+                    candidate_observations = 0
                 await asyncio.sleep(poll_sec)
             else:
                 # 手動モード時は前面監視不要 → osascript を叩かず長めに待機（負荷ゼロ）
+                last_candidate = None
+                candidate_observations = 0
                 await asyncio.sleep(5)
         except asyncio.CancelledError:
             break
@@ -742,11 +793,24 @@ async def on_startup(app):
     app["led_task"] = asyncio.create_task(led_animator(app))
 
 
-async def on_cleanup(app):
-    for k in ("mode_task", "led_task"):
-        task = app.get(k)
-        if task:
+def cancel_background_tasks(app) -> list[asyncio.Task]:
+    """バックグラウンドタスクのキャンセルを先に発行する。"""
+    tasks = [
+        task
+        for key in ("mode_task", "led_task")
+        if (task := app.get(key)) is not None
+    ]
+    for task in tasks:
+        if not task.done():
             task.cancel()
+    return tasks
+
+
+async def on_cleanup(app):
+    tasks = cancel_background_tasks(app)
+    for task in tasks:
+        with suppress(asyncio.CancelledError):
+            await task
 
 
 def create_app() -> web.Application:
