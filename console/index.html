@@ -115,6 +115,52 @@
   }
   .empty { padding: 18px; color: var(--sub); text-align: center; }
 
+  /* ---- family 表示・テスト発火 ---- */
+  .family-badge {
+    display: inline-block; flex-shrink: 0; color: #fff; border-radius: 6px;
+    font-size: 10px; font-weight: 700; line-height: 1.5; padding: 1px 7px;
+    vertical-align: middle;
+  }
+  .family-badge.claude { background: var(--accent); }
+  .family-badge.codex { background: #0A84FF; }
+  .test-family { display: flex; align-items: center; gap: 9px; min-width: 150px; }
+  .test-family .desc { white-space: nowrap; }
+  .test-actions { display: flex; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }
+  .test-actions button { font-size: 12px; padding: 5px 10px; }
+  .test-scenario { display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
+  #test-scenario-status { min-width: 130px; text-align: right; }
+
+  /* ---- イベント監視 ---- */
+  .event-item {
+    display: grid; grid-template-columns: 68px 56px 42px minmax(120px, .8fr) 82px minmax(160px, 1.3fr);
+    align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--border);
+    font-size: 12px;
+  }
+  .event-item:last-child { border-bottom: none; }
+  .event-time, .event-agent { color: var(--sub); font-variant-numeric: tabular-nums; }
+  .event-agent { font-weight: 700; }
+  .event-name { font-family: ui-monospace, monospace; font-weight: 600; overflow-wrap: anywhere; }
+  .event-state { display: flex; align-items: center; gap: 6px; color: var(--sub); white-space: nowrap; }
+  .state-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--sub); }
+  .state-dot.idle { background: #B9B6AC; }
+  .state-dot.thinking { background: #2E6BFF; }
+  .state-dot.done { background: #00C000; }
+  .state-dot.input { background: #E8900A; }
+  .state-dot.error { background: #E23B2E; }
+  .state-dot.off { background: #6B7280; opacity: .45; }
+  .event-detail {
+    color: var(--sub); font-family: ui-monospace, monospace; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  @media (max-width: 700px) {
+    #test-events-card .row { align-items: flex-start; flex-wrap: wrap; }
+    .test-family { min-width: 100%; }
+    .test-actions { justify-content: flex-start; }
+    .event-item { grid-template-columns: 62px 54px 38px minmax(100px, 1fr); gap: 8px; }
+    .event-state { grid-column: 1 / 3; }
+    .event-detail { grid-column: 3 / -1; }
+  }
+
   /* ---- モーダル ---- */
   .overlay {
     position: fixed; inset: 0; background: rgba(0,0,0,.35);
@@ -193,6 +239,48 @@
 <h2>承認待ち</h2>
 <div class="card" id="pending-card"><div class="empty">保留中の承認要求はありません</div></div>
 
+<h2>テスト発火</h2>
+<div class="card" id="test-events-card">
+  <div class="row">
+    <div class="test-family">
+      <span class="family-badge claude">claude</span>
+      <span class="desc">mock-claude</span>
+    </div>
+    <div class="test-actions">
+      <button type="button" data-test-family="claude" data-test-event="SessionStart">開始</button>
+      <button type="button" data-test-family="claude" data-test-event="UserPromptSubmit">thinking</button>
+      <button type="button" data-test-family="claude" data-test-event="PermissionRequest">承認待ち</button>
+      <button type="button" data-test-family="claude" data-test-event="Stop">完了</button>
+      <button type="button" data-test-family="claude" data-test-event="StopFailure">エラー</button>
+      <button type="button" data-test-family="claude" data-test-event="SessionEnd">終了</button>
+    </div>
+  </div>
+  <div class="row">
+    <div class="test-family">
+      <span class="family-badge codex">codex</span>
+      <span class="desc">mock-codex</span>
+    </div>
+    <div class="test-actions">
+      <button type="button" data-test-family="codex" data-test-event="SessionStart">開始</button>
+      <button type="button" data-test-family="codex" data-test-event="UserPromptSubmit">thinking</button>
+      <button type="button" data-test-family="codex" data-test-event="PermissionRequest">承認待ち</button>
+      <button type="button" data-test-family="codex" data-test-event="Stop">完了</button>
+      <button type="button" data-test-family="codex" data-test-event="StopFailure">エラー</button>
+      <button type="button" data-test-family="codex" data-test-event="SessionEnd">終了</button>
+    </div>
+  </div>
+  <div class="row">
+    <div class="desc">両 family を開始から終了まで 1.2 秒間隔で自動再生します</div>
+    <div class="test-scenario">
+      <span class="value" id="test-scenario-status">待機中</span>
+      <button type="button" class="primary" id="test-full-scenario">フルシナリオ実行</button>
+    </div>
+  </div>
+</div>
+
+<h2>イベント監視</h2>
+<div class="card" id="events-card"><div class="empty">イベントはまだありません</div></div>
+
 <h2>オプション</h2>
 <div class="card">
   <div class="row">
@@ -260,11 +348,36 @@ let editingPos = null;
 let learnedKeyId = null;
 let selectedIcon = null;
 
+const STATE_VIEW = {
+  idle: {label: "待機", color: "#B9B6AC"},
+  thinking: {label: "Thinking", color: "#2E6BFF"},
+  done: {label: "完了", color: "#00C000"},
+  input: {label: "入力待ち", color: "#E8900A"},
+  error: {label: "エラー", color: "#E23B2E"},
+  off: {label: "終了", color: "#6B7280"},
+};
+const TEST_FAMILIES = ["claude", "codex"];
+const TEST_EVENT_LABEL = {
+  SessionStart: "開始", UserPromptSubmit: "thinking", PermissionRequest: "承認待ち",
+  PostToolUse: "ツール完了", Stop: "完了", StopFailure: "エラー", SessionEnd: "終了",
+};
+const FULL_TEST_SCENARIO = [
+  "SessionStart", "UserPromptSubmit", "PermissionRequest", "PostToolUse",
+  "Stop", "StopFailure", "SessionEnd",
+];
+const EVENT_TIME_FORMAT = new Intl.DateTimeFormat("ja-JP", {
+  hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
+});
+
 const actionById = id => catalog.actions.find(a => a.id === id);
 
 const $ = id => document.getElementById(id);
+// TODO(follow-up): query に残る token を URL fragment または cookie へ移行する。
+const pageToken = new URLSearchParams(window.location.search).get("token") || "";
 const api = async (path, opts) => {
-  const r = await fetch(path, {headers: {"Content-Type": "application/json"}, ...opts});
+  const headers = {"Content-Type": "application/json", ...(opts?.headers || {})};
+  if (pageToken) headers["X-Bridge-Token"] = pageToken;
+  const r = await fetch(path, {...opts, headers});
   if (!r.ok) throw new Error(await r.text());
   return r.json();
 };
@@ -273,6 +386,28 @@ const toast = msg => {
   $("toast").classList.add("show");
   setTimeout(() => $("toast").classList.remove("show"), 2200);
 };
+
+// hook 由来の文字列は innerHTML に入れず、DOM の textContent で表示する。
+const displayText = value => {
+  if (value == null) return "";
+  if (typeof value === "string") return value;
+  try { return JSON.stringify(value); } catch { return String(value); }
+};
+
+function familyBadge(family) {
+  const normalized = family === "codex" ? "codex" : "claude";
+  const badge = document.createElement("span");
+  badge.className = `family-badge ${normalized}`;
+  badge.textContent = normalized;
+  return badge;
+}
+
+function showEmpty(card, message) {
+  const empty = document.createElement("div");
+  empty.className = "empty";
+  empty.textContent = message;
+  card.replaceChildren(empty);
+}
 
 function bindingForPos(pos) {
   for (const [keyId, b] of Object.entries(config.keys || {}))
@@ -426,19 +561,21 @@ $("save").onclick = async () => {
 
 function renderStatus(st) {
   const conn = $("st-conn");
-  if (st.device.open) { conn.textContent = "接続済み"; conn.className = "value ok"; }
-  else if (st.device.found) { conn.textContent = "検出済み（open 不可）"; conn.className = "value warn"; }
+  const device = st.device || {};
+  if (device.open) { conn.textContent = "接続済み"; conn.className = "value ok"; }
+  else if (device.found) { conn.textContent = "検出済み（open 不可）"; conn.className = "value warn"; }
   else { conn.textContent = "未接続"; conn.className = "value ng"; }
 
   const inp = $("st-input");
-  if (st.device.open) { inp.textContent = "許可済み"; inp.className = "value ok"; }
-  else if (st.device.error && st.device.error.includes("入力監視")) { inp.textContent = "未許可の可能性"; inp.className = "value ng"; }
+  if (device.open) { inp.textContent = "許可済み"; inp.className = "value ok"; }
+  else if (device.error && device.error.includes("入力監視")) { inp.textContent = "未許可の可能性"; inp.className = "value ng"; }
   else { inp.textContent = "—"; inp.className = "value"; }
 
   $("st-led").textContent = st.led_control ? "有効" : "未対応";
   $("last-key").textContent = st.last_raw_key ? `最終キー: ${st.last_raw_key.key_id}` : "—";
 
   renderSessions(st);
+  renderEvents(st.events);
   const badge = $("mode-badge");
   const md = catalog.modes.find(m => m.id === st.mode);
   if (md) {
@@ -454,22 +591,55 @@ function renderStatus(st) {
   const autoBtn = document.querySelector("#mode-buttons .mode-auto");
   if (autoBtn) autoBtn.classList.toggle("active", st.auto_mode);
 
+  renderPending(st.pending);
+}
+
+function renderPending(pending) {
   const card = $("pending-card");
-  if (!st.pending.length) {
-    card.innerHTML = `<div class="empty">保留中の承認要求はありません</div>`;
+  if (!Array.isArray(pending) || !pending.length) {
+    showEmpty(card, "保留中の承認要求はありません");
     return;
   }
-  card.innerHTML = st.pending.map(p => `
-    <div class="pending-item">
-      <span class="badge">KEY ${p.agent_index}</span>
-      <div class="info">
-        <div class="tool">${p.tool_name} <span class="value">· ${p.session_id.slice(0, 8)} · ${Math.round(p.age_sec)}s</span></div>
-        <div class="detail">${p.detail.replace(/</g, "&lt;")}</div>
-      </div>
-      <button class="approve" onclick="resolve(${p.id}, 'accept')">承認</button>
-      <button class="hold" onclick="resolve(${p.id}, 'fallback')">保留</button>
-      <button class="deny" onclick="resolve(${p.id}, 'deny')">拒否</button>
-    </div>`).join("");
+  const fragment = document.createDocumentFragment();
+  for (const p of pending) {
+    const item = document.createElement("div");
+    item.className = "pending-item";
+
+    const badge = document.createElement("span");
+    badge.className = "badge";
+    const agentIndex = typeof p.agent_index === "number" && Number.isFinite(p.agent_index)
+      ? p.agent_index : "—";
+    badge.textContent = `KEY ${agentIndex}`;
+
+    const info = document.createElement("div");
+    info.className = "info";
+    const tool = document.createElement("div");
+    tool.className = "tool";
+    tool.textContent = displayText(p.tool_name) || "?";
+    const meta = document.createElement("span");
+    meta.className = "value";
+    const sessionShort = displayText(p.session_id).slice(0, 8);
+    const age = Number.isFinite(Number(p.age_sec)) ? Math.round(Number(p.age_sec)) : "—";
+    meta.textContent = ` · ${sessionShort} · ${age}s`;
+    tool.appendChild(meta);
+    const detail = document.createElement("div");
+    detail.className = "detail";
+    detail.textContent = displayText(p.detail);
+    info.append(tool, detail);
+
+    item.append(badge, info);
+    for (const [className, label, result] of [
+      ["approve", "承認", "accept"], ["hold", "保留", "fallback"], ["deny", "拒否", "deny"],
+    ]) {
+      const button = document.createElement("button");
+      button.className = className;
+      button.textContent = label;
+      button.onclick = () => resolve(p.id, result);
+      item.appendChild(button);
+    }
+    fragment.appendChild(item);
+  }
+  card.replaceChildren(fragment);
 }
 
 window.resolve_ = null;
@@ -483,28 +653,115 @@ function renderSessions(st) {
   const card = $("sessions-card");
   const entries = Object.entries(st.sessions || {});
   if (!entries.length) {
-    card.innerHTML = `<div class="empty">アクティブなセッションはありません</div>`;
+    showEmpty(card, "アクティブなセッションはありません");
     return;
   }
-  entries.sort((a, b) => a[1] - b[1]);
-  const STATE = {idle:["待機","#B9B6AC"], thinking:["Thinking","#2E6BFF"], done:["完了","#00C000"],
-                 input:["入力待ち","#E8900A"], error:["エラー","#E23B2E"]};
-  card.innerHTML = entries.map(([sid, idx]) => {
+  entries.sort((a, b) => Number(a[1]) - Number(b[1]));
+  const fragment = document.createDocumentFragment();
+  for (const [sid, idx] of entries) {
     const info = (st.session_info || {})[sid] || {};
-    const astate = ((st.agent_state || {})[idx] || {}).state || "idle";
-    const [slabel, scolor] = STATE[astate] || STATE.idle;
-    const ctx = info.is_cmux
-      ? `<span class="scope-badge scope-codex">cmux</span>`
-      : `<span class="scope-badge scope-common">app</span>`;
-    const sel = st.selected_agent === idx ? " · 選択中" : "";
-    const cwd = info.cwd ? ` · ${info.cwd.split("/").slice(-1)[0]}` : "";
-    return `<div class="pending-item">
-      <span class="badge">AG${idx - 1}</span>
-      <div class="info"><div class="tool">${sid.slice(0, 8)} ${ctx}
-        <span style="color:${scolor};font-weight:700">● ${slabel}</span><span class="value">${cwd}${sel}</span></div>
-        <div class="detail">${info.cmux_workspace_id ? "ws: " + info.cmux_workspace_id.slice(0, 8) : "（cmux 外 / 未捕捉）"}</div></div>
-    </div>`;
-  }).join("");
+    const agentState = (st.agent_state || {})[idx] || {};
+    const state = Object.prototype.hasOwnProperty.call(STATE_VIEW, agentState.state)
+      ? agentState.state : "idle";
+    const stateView = STATE_VIEW[state];
+
+    const item = document.createElement("div");
+    item.className = "pending-item";
+    const agentBadge = document.createElement("span");
+    agentBadge.className = "badge";
+    agentBadge.textContent = `AG${Number(idx) - 1}`;
+
+    const infoBox = document.createElement("div");
+    infoBox.className = "info";
+    const line = document.createElement("div");
+    line.className = "tool";
+    line.append(displayText(sid).slice(0, 8), " ");
+    const contextBadge = document.createElement("span");
+    contextBadge.className = `scope-badge ${info.is_cmux ? "scope-codex" : "scope-common"}`;
+    contextBadge.textContent = info.is_cmux ? "cmux" : "app";
+    line.append(contextBadge, " ", familyBadge(agentState.family), " ");
+
+    const stateLabel = document.createElement("span");
+    stateLabel.style.color = stateView.color;
+    stateLabel.style.fontWeight = "700";
+    stateLabel.textContent = `● ${stateView.label}`;
+    line.appendChild(stateLabel);
+
+    const cwdText = displayText(info.cwd);
+    const cwdParts = cwdText.split("/").filter(Boolean);
+    const selected = Number(st.selected_agent) === Number(idx) ? " · 選択中" : "";
+    const suffix = document.createElement("span");
+    suffix.className = "value";
+    suffix.textContent = `${cwdText ? ` · ${cwdParts.at(-1) || cwdText}` : ""}${selected}`;
+    line.appendChild(suffix);
+
+    const detail = document.createElement("div");
+    detail.className = "detail";
+    detail.textContent = info.cmux_workspace_id
+      ? `ws: ${displayText(info.cmux_workspace_id).slice(0, 8)}` : "（cmux 外 / 未捕捉）";
+    infoBox.append(line, detail);
+    item.append(agentBadge, infoBox);
+    fragment.appendChild(item);
+  }
+  card.replaceChildren(fragment);
+}
+
+function renderEvents(events) {
+  const card = $("events-card");
+  const recent = Array.isArray(events) ? events.slice(0, 30) : [];
+  if (!recent.length) {
+    showEmpty(card, "イベントはまだありません");
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+  for (const event of recent) {
+    const item = document.createElement("div");
+    item.className = "event-item";
+
+    const time = document.createElement("time");
+    time.className = "event-time";
+    const hasTimestamp = event.ts != null && event.ts !== "";
+    const timestamp = Number(event.ts);
+    const date = new Date(timestamp * 1000);
+    if (hasTimestamp && Number.isFinite(timestamp) && !Number.isNaN(date.getTime())) {
+      time.dateTime = date.toISOString();
+      time.title = date.toLocaleString("ja-JP");
+      time.textContent = EVENT_TIME_FORMAT.format(date);
+    } else {
+      time.textContent = "—";
+    }
+
+    const agent = document.createElement("span");
+    agent.className = "event-agent";
+    const hasAgentIndex = event.agent_index != null && event.agent_index !== "";
+    const agentIndex = Number(event.agent_index);
+    agent.textContent = hasAgentIndex && Number.isInteger(agentIndex) && agentIndex >= 1
+      ? `AG${agentIndex - 1}` : "—";
+
+    const eventName = document.createElement("span");
+    eventName.className = "event-name";
+    eventName.textContent = displayText(event.event) || "—";
+
+    const stateBox = document.createElement("span");
+    stateBox.className = "event-state";
+    const state = Object.prototype.hasOwnProperty.call(STATE_VIEW, event.state) ? event.state : null;
+    const dot = document.createElement("span");
+    dot.className = `state-dot${state ? ` ${state}` : ""}`;
+    const stateLabel = document.createElement("span");
+    stateLabel.textContent = state ? STATE_VIEW[state].label : "—";
+    stateBox.append(dot, stateLabel);
+
+    const detail = document.createElement("span");
+    detail.className = "event-detail";
+    const detailText = [displayText(event.tool_name), displayText(event.detail)].filter(Boolean).join(" · ") || "—";
+    detail.textContent = detailText;
+    detail.title = detailText;
+
+    item.append(time, familyBadge(event.family), agent, eventName, stateBox, detail);
+    fragment.appendChild(item);
+  }
+  card.replaceChildren(fragment);
 }
 
 async function setMode(body) {
@@ -527,6 +784,98 @@ function renderModeButtons() {
   wrap.appendChild(auto);
 }
 
+function testEventPayload(family, event) {
+  const toolName = family === "codex" ? "apply_patch" : "Bash";
+  const toolInput = family === "codex"
+    ? {patch: "*** console mock event ***"}
+    : {command: "echo console-mock"};
+  const body = {
+    event,
+    family,
+    session_id: `mock-${family}`,
+    cwd: `/tmp/claudemicro-${family}`,
+    env: {is_cmux: false},
+  };
+  if (event === "SessionStart") body.source = "console-test";
+  if (event === "PermissionRequest" || event === "PostToolUse") {
+    body.tool_name = toolName;
+    body.tool_input = toolInput;
+  }
+  if (event === "StopFailure") {
+    body.error_type = "console_mock_failure";
+    body.message = `${family} のテストエラー`;
+  }
+  return body;
+}
+
+async function fireTestEvent(family, event) {
+  return api("/api/event", {
+    method: "POST",
+    body: JSON.stringify(testEventPayload(family, event)),
+  });
+}
+
+for (const button of document.querySelectorAll("[data-test-family][data-test-event]")) {
+  button.onclick = async () => {
+    if (testScenarioRunning) return;
+    button.disabled = true;
+    try {
+      await fireTestEvent(button.dataset.testFamily, button.dataset.testEvent);
+      toast(`${button.dataset.testFamily}: ${TEST_EVENT_LABEL[button.dataset.testEvent] || button.dataset.testEvent}`);
+    } catch (e) {
+      toast("テスト発火に失敗: " + e.message);
+    } finally {
+      button.disabled = testScenarioRunning;
+    }
+  };
+}
+
+let testScenarioTimer = null;
+let testScenarioRunning = false;
+let testScenarioFailures = 0;
+
+function setTestControlsDisabled(disabled) {
+  for (const button of document.querySelectorAll("#test-events-card button")) button.disabled = disabled;
+}
+
+function finishTestScenario() {
+  testScenarioRunning = false;
+  testScenarioTimer = null;
+  setTestControlsDisabled(false);
+  $("test-full-scenario").textContent = "フルシナリオ実行";
+  if (testScenarioFailures) {
+    $("test-scenario-status").textContent = `完了（${testScenarioFailures} 件失敗）`;
+    toast("フルシナリオの一部が失敗しました");
+  } else {
+    $("test-scenario-status").textContent = "完了";
+    toast("フルシナリオが完了しました");
+  }
+}
+
+async function runTestScenarioStep(index) {
+  if (!testScenarioRunning) return;
+  const event = FULL_TEST_SCENARIO[index];
+  const label = TEST_EVENT_LABEL[event] || event;
+  $("test-scenario-status").textContent = `${index + 1}/${FULL_TEST_SCENARIO.length} ${label}`;
+  const results = await Promise.allSettled(TEST_FAMILIES.map(family => fireTestEvent(family, event)));
+  testScenarioFailures += results.filter(result => result.status === "rejected").length;
+  if (index + 1 >= FULL_TEST_SCENARIO.length) {
+    finishTestScenario();
+    return;
+  }
+  // LED と 2 秒ポーリングの双方で遷移を追える間隔にする。
+  testScenarioTimer = setTimeout(() => runTestScenarioStep(index + 1), 1200);
+}
+
+$("test-full-scenario").onclick = () => {
+  if (testScenarioRunning) return;
+  testScenarioRunning = true;
+  testScenarioFailures = 0;
+  setTestControlsDisabled(true);
+  $("test-full-scenario").textContent = "実行中…";
+  testScenarioTimer = setTimeout(() => runTestScenarioStep(0), 0);
+};
+
 let poll;
 async function init() {
   catalog = await api("/api/actions");
@@ -534,8 +883,12 @@ async function init() {
   renderModeButtons();
   renderPad();
   renderOptions();
+  let polling = false;
   poll = async () => {
+    if (polling) return;
+    polling = true;
     try { renderStatus(await api("/api/status")); } catch { /* bridge 停止中 */ }
+    finally { polling = false; }
   };
   poll();
   setInterval(poll, 2000);

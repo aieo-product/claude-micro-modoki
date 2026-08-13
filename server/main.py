@@ -12,6 +12,7 @@ APPROVAL_BRIDGE_TOKEN 環境変数を設定すると /decision 以外の API に
 """
 
 import asyncio
+import collections
 import itertools
 import json
 import os
@@ -29,6 +30,10 @@ CONSOLE_PATH = os.path.join(os.path.dirname(__file__), "..", "console", "index.h
 TOKEN = os.environ.get("APPROVAL_BRIDGE_TOKEN", "")
 
 AGENT_KEY_COUNT = 6
+SESSION_INFO_LIMIT = 32
+OBSERVED_INPUT_SESSION_LIMIT = 32
+OBSERVED_INPUT_ID_LIMIT = 8
+OBSERVED_INPUT_DUMMY_ID = "__missing_tool_use_id__"
 # family 色 (エージェントキーの色ループ用): claude=コーラル / codex=青。config.mode の枠色と一致
 FAMILY_COLOR = {"claude": 0xD97757, "codex": 0x0A84FF}
 # これらの状態のキーだけ「状態色⇄family色」でループ (active のみアニメ=軽量)
@@ -47,9 +52,13 @@ class Bridge:
         self.sessions: dict[str, int] = {}
         # セッション付随情報: session_id -> {cmux_workspace_id, is_cmux, ...} (SessionStart で登録, #4)
         self.session_info: dict[str, dict] = {}
+        # Codex observe-only 承認の tool_use_id。セッション/ID とも固定上限で保持する。
+        self.observed_input: dict[str, set[str]] = {}
         self.selected_agent = None  # 選択中エージェントキー index
         # エージェントキー状態: index -> {"state", "family"}。状態機とアニメータで共有
         self.agent_state: dict[int, dict] = {}
+        # フックイベント監視用。常駐メモリを増やさない固定長リングバッファ
+        self.events = collections.deque(maxlen=100)
         self._led_last: dict[int, tuple] = {}  # index -> 最後に書いた(color,brightness) 重複書込抑止 #9
         self._anim_phase = False
         self.last_raw_key: dict | None = None   # キー学習・デバッグ表示用
@@ -147,6 +156,65 @@ class Bridge:
                 req["future"].set_result(result)
                 return
 
+    def _deny_pending_for_session(self, session_id: str, *, detach: bool = False):
+        """セッション単位で保留承認を fail-close し、必要ならキー所有権も外す。"""
+        for request in self.pending.values():
+            if request.get("session_id") != session_id:
+                continue
+            if not request["future"].done():
+                request["future"].set_result("deny")
+            if detach:
+                original_index = request.get("agent_index")
+                if not isinstance(request.get("public_agent_index"), int):
+                    request["public_agent_index"] = (
+                        original_index if isinstance(original_index, int) else -1)
+                request["agent_index"] = None
+                # TODO(follow-up): 再起動/キー再割当を跨ぐ厳密な pending 所有権には世代 ID を追加する。
+
+    @staticmethod
+    def _observed_tool_key(tool_use_id) -> str:
+        if tool_use_id is None or tool_use_id == "":
+            return OBSERVED_INPUT_DUMMY_ID
+        return str(tool_use_id)
+
+    def add_observed_input(self, session_id: str, tool_use_id):
+        """observe-only 承認を固定長で記録する。古い非アクティブ session を優先して捨てる。"""
+        tool_ids = self.observed_input.get(session_id)
+        if tool_ids is None:
+            while len(self.observed_input) >= OBSERVED_INPUT_SESSION_LIMIT:
+                victim = next(
+                    (sid for sid in self.observed_input if sid not in self.sessions),
+                    next(iter(self.observed_input)),
+                )
+                self.observed_input.pop(victim, None)
+            tool_ids = set()
+            self.observed_input[session_id] = tool_ids
+        tool_key = self._observed_tool_key(tool_use_id)
+        if tool_key not in tool_ids and len(tool_ids) >= OBSERVED_INPUT_ID_LIMIT:
+            tool_ids.pop()
+        tool_ids.add(tool_key)
+
+    def remove_observed_input(self, session_id: str, tool_use_id):
+        """対応する PostToolUse だけを解決し、別ツールの承認表示は維持する。"""
+        tool_ids = self.observed_input.get(session_id)
+        if tool_ids is None:
+            return
+        tool_ids.discard(self._observed_tool_key(tool_use_id))
+        if not tool_ids:
+            self.observed_input.pop(session_id, None)
+
+    def clear_observed_input(self, session_id: str):
+        self.observed_input.pop(session_id, None)
+
+    def _trim_session_info(self):
+        """直近情報を32件まで残し、キーを持つ active session は削除しない。"""
+        while len(self.session_info) > SESSION_INFO_LIMIT:
+            victim = next(
+                (sid for sid in self.session_info if sid not in self.sessions), None)
+            if victim is None:
+                break
+            self.session_info.pop(victim, None)
+
     def assign_agent_key(self, session_id: str) -> int:
         if session_id in self.sessions:
             self.sessions[session_id] = self.sessions.pop(session_id)  # LRU 更新
@@ -157,12 +225,15 @@ class Bridge:
                 self.sessions[session_id] = i
                 return i
         # 満杯: 承認保留中/選択中でない最古のセッションを追い出す (#1: 保留中キーを奪わない)
-        busy = {r["agent_index"] for r in self.pending.values() if not r["future"].done()}
+        busy = {r["agent_index"] for r in self.pending.values()
+                if r.get("session_id") in self.sessions and not r["future"].done()}
         victim = next((s for s, i in self.sessions.items()
                        if i not in busy and i != self.selected_agent), None)
         if victim is None:
             victim = next(iter(self.sessions))  # 全キーが多忙: やむなく最古
         idx = self.sessions.pop(victim)
+        # 多忙キーをやむなく再利用するときも、古い承認を新セッションへ誤帰属させない
+        self._deny_pending_for_session(victim, detach=True)
         # session_info はエビクション時に消さない (#7: 再活性化で focus 情報を失わない。SessionEnd で解放)
         if idx == self.selected_agent:
             self.selected_agent = None  # #2: 奪ったキーが選択中なら選択解除
@@ -174,13 +245,16 @@ class Bridge:
     def register_session(self, session_id: str, info: dict) -> int:
         """SessionStart: エージェントキー確保 + cmux workspace 等を記録 + idle 点灯。"""
         idx = self.assign_agent_key(session_id)
+        family = "codex" if info.get("family") == "codex" else "claude"
+        # 再登録も「直近」として扱い、dict の挿入順を更新する。
+        self.session_info.pop(session_id, None)
         self.session_info[session_id] = {
             "cmux_workspace_id": (info.get("env") or {}).get("cmux_workspace_id"),
             "is_cmux": bool((info.get("env") or {}).get("is_cmux")),
             "cwd": info.get("cwd"),
         }
-        # Claude Code フック由来のセッションは claude family
-        self.set_agent_state(idx, "idle", family="claude")
+        self._trim_session_info()
+        self.notify_session(session_id, "idle", family=family)
         print(f"[session] start {session_id} -> AG{idx-1} cmux={self.session_info[session_id]['is_cmux']}", flush=True)
         return idx
 
@@ -188,23 +262,34 @@ class Bridge:
         """SessionEnd: キー解放 + LED 消灯 + 選択解除。"""
         idx = self.sessions.pop(session_id, None)
         self.session_info.pop(session_id, None)
+        self.clear_observed_input(session_id)
+        # 既に eviction 済みで idx が無くても session_id で確実に fail-close する。
+        self._deny_pending_for_session(session_id, detach=True)
         if idx is not None:
             if self.selected_agent == idx:
                 self.selected_agent = None  # #2: 解放したキーの選択を残さない
             self.set_agent_state(idx, "off")
             print(f"[session] end {session_id} (AG{idx-1} 解放)", flush=True)
 
-    def notify_session(self, session_id: str, state: str):
-        """UserPromptSubmit=thinking / Notification=input / Stop=done を LED に反映。
-        承認保留(input)中のキーは Stop/done 等で上書きしない (#8)。"""
+    def notify_session(self, session_id: str, state: str, family: str | None = None):
+        """フックイベントの状態を LED に反映。SessionStart が無くてもキーを自動割当する。
+        承認保留(input)中の良性遷移は抑止するが、error は必ず表示する。"""
         idx = self.sessions.get(session_id)
         if idx is None:
-            return
-        has_pending = any(r["agent_index"] == idx and not r["future"].done()
+            idx = self.assign_agent_key(session_id)
+        has_pending = any(r["session_id"] == session_id and r["agent_index"] == idx
+                          and not r["future"].done()
                           for r in self.pending.values())
-        if has_pending and state != "input":
-            return  # 承認待ち(input)LED を優先し、良性イベントで消さない
-        self.set_agent_state(idx, state)
+        has_observed_input = bool(self.observed_input.get(session_id))
+        if (has_pending or has_observed_input) and state in ("thinking", "done", "idle"):
+            # error 表示中は input 抑止でも赤を消さず、それ以外は input を維持する。
+            maintained_state = (
+                "error" if self.agent_state.get(idx, {}).get("state") == "error"
+                else "input")
+            if family is not None:
+                self.set_agent_state(idx, maintained_state, family=family)
+            return
+        self.set_agent_state(idx, state, family=family)
 
     # ---- モード制御 (issue #7 → #11: 4モード) ----
 
@@ -237,8 +322,12 @@ class Bridge:
             self.agent_state.pop(index, None)
             self._write_agent_color(index, 0, 0.0, EFFECT["off"])
             return
-        fam = family or (self.agent_state.get(index, {}).get("family")) or "claude"
-        self.agent_state[index] = {"state": state, "family": fam}
+        current = self.agent_state.get(index)
+        fam = family or (current or {}).get("family") or "claude"
+        requested = {"state": state, "family": fam}
+        if current == requested:
+            return  # 論理状態が同一なら animator の表示相を含め一切触らない (#9)
+        self.agent_state[index] = requested
         # 初期色を即表示 (animated でも待たずに反映。以降 animator がトグル)
         self._write_agent_color(index, STATE_COLOR.get(state, STATE_COLOR["idle"]),
                                 STATE_BRIGHTNESS.get(state, 0.25))
@@ -351,7 +440,10 @@ async def auth_middleware(request, handler):
 
 async def handle_decision(request: web.Request):
     data = await request.json()
+    if not isinstance(data, dict):
+        return web.json_response({"error": "bad request"}, status=400)
     session_id = str(data.get("session_id") or "unknown")
+    family = "codex" if data.get("family") == "codex" else "claude"
     tool_name = str(data.get("tool_name") or "?")
     tool_input = json.dumps(data.get("tool_input") or {}, ensure_ascii=False)[:200]
 
@@ -362,17 +454,42 @@ async def handle_decision(request: web.Request):
         "id": req_id, "session_id": session_id, "tool_name": tool_name,
         "detail": tool_input, "created": time.time(),
         "future": fut, "agent_index": agent_index,
+        "public_agent_index": agent_index,
     }
-    bridge.set_agent_state(agent_index, "input")  # 承認待ち = 入力が必要(アンバー)
+    bridge.set_agent_state(agent_index, "input", family=family)  # 承認待ち = 入力が必要(アンバー)
+    bridge.events.append({
+        "ts": time.time(), "family": family, "session_id": session_id,
+        "session_short": session_id[:8], "event": "PreToolUse", "state": "input",
+        "tool_name": tool_name, "detail": tool_input, "agent_index": agent_index,
+    })
+    result = "timeout"  # キャンセル等で応答不能になった場合もフェイルクローズ相当を維持
     try:
         result = await asyncio.wait_for(fut, timeout=bridge.cfg["approval_timeout_sec"])
     except asyncio.TimeoutError:
         result = "timeout"  # hook_client 側で deny に落ちる (フェイルクローズ)
     finally:
         bridge.pending.pop(req_id, None)
-        # 承認後はツールが動く=thinking / タイムアウト(拒否)は待機に戻す
-        bridge.set_agent_state(agent_index, "idle" if result == "timeout" else "thinking")
+        # 同じキーに別の承認が残る場合は input を維持。終了/再割当済みのキーには触れない
+        if bridge.sessions.get(session_id) == agent_index:
+            current_state = bridge.agent_state.get(agent_index, {}).get("state")
+            if current_state != "error":  # StopFailure の terminal error は消さない
+                has_pending = any(
+                    r.get("session_id") == session_id
+                    and r.get("agent_index") == agent_index
+                    and not r["future"].done()
+                    for r in bridge.pending.values())
+                if has_pending or bridge.observed_input.get(session_id):
+                    bridge.set_agent_state(agent_index, "input")
+                else:
+                    # 承認後はツールが動く=thinking / タイムアウト(拒否)は待機に戻す
+                    bridge.set_agent_state(
+                        agent_index, "idle" if result == "timeout" else "thinking")
     return web.json_response({"result": result})
+
+
+def _public_pending_agent_index(request: dict) -> int:
+    value = request.get("public_agent_index", request.get("agent_index"))
+    return value if isinstance(value, int) and not isinstance(value, bool) else -1
 
 
 async def handle_status(request: web.Request):
@@ -384,12 +501,13 @@ async def handle_status(request: web.Request):
         "pending": [
             {"id": r["id"], "session_id": r["session_id"], "tool_name": r["tool_name"],
              "detail": r["detail"], "age_sec": round(now - r["created"], 1),
-             "agent_index": r["agent_index"]}
+             "agent_index": _public_pending_agent_index(r)}
             for r in sorted(bridge.pending.values(), key=lambda r: r["created"])
         ],
         "sessions": bridge.sessions,
         "session_info": bridge.session_info,
         "agent_state": {str(i): st for i, st in bridge.agent_state.items()},
+        "events": list(reversed(bridge.events))[:50],
         "last_raw_key": bridge.last_raw_key,
         "mode": bridge.mode,
         "auto_mode": bridge.auto_mode,
@@ -407,24 +525,79 @@ async def handle_actions(request: web.Request):
 
 
 async def handle_event(request: web.Request):
-    """Claude Code の非承認イベント → 本家凡例の状態 (#4/#6)。
-    SessionStart=idle(白) / UserPromptSubmit=thinking(青) / Notification=input(アンバー) /
-    Stop=done(緑) / SessionEnd=off。"""
+    """Claude/Codex の観測イベントを状態機と監視リングバッファへ反映する。"""
     body = await request.json()
+    if not isinstance(body, dict):
+        return web.json_response({"ok": False, "error": "bad request"}, status=400)
     event = body.get("event")
-    sid = body.get("session_id")
+    sid = str(body.get("session_id") or "")
     if not sid:
         return web.json_response({"ok": False, "error": "no session_id"}, status=400)
+
+    family = "codex" if body.get("family") == "codex" else "claude"
+    state = None
+    agent_index = bridge.sessions.get(sid)
     if event == "SessionStart":
-        bridge.register_session(sid, body)
+        state = "idle"
+        agent_index = bridge.register_session(sid, body)
     elif event == "SessionEnd":
+        state = "off"
         bridge.release_session(sid)
-    elif event == "UserPromptSubmit":
-        bridge.notify_session(sid, "thinking")   # 作業開始 = Thinking(青)
+    elif event in ("UserPromptSubmit", "PreToolUse"):
+        state = "thinking"
+        bridge.notify_session(sid, state, family=family)
+        agent_index = bridge.sessions.get(sid)
+    elif event == "PostToolUse":
+        if family == "codex":
+            bridge.remove_observed_input(sid, body.get("tool_use_id"))
+        state = "thinking"
+        bridge.notify_session(sid, state, family=family)
+        agent_index = bridge.sessions.get(sid)
+    elif event == "PermissionRequest":
+        if family == "codex":
+            bridge.add_observed_input(sid, body.get("tool_use_id"))
+        state = "input"
+        bridge.notify_session(sid, state, family=family)
+        agent_index = bridge.sessions.get(sid)
+    elif event == "StopFailure":
+        # ターン異常終了時は宙吊りの同一セッション承認を先に fail-close する。
+        bridge._deny_pending_for_session(sid)
+        state = "error"
+        bridge.notify_session(sid, state, family=family)
+        agent_index = bridge.sessions.get(sid)
+    elif event == "PostToolUseFailure":
+        state = "error"
+        bridge.notify_session(sid, state, family=family)
+        agent_index = bridge.sessions.get(sid)
     elif event == "Notification":
-        bridge.notify_session(sid, "input")      # 入力/許可待ち = アンバー
+        state = "done" if body.get("notification_type") == "agent_completed" else "input"
+        bridge.notify_session(sid, state, family=family)
+        agent_index = bridge.sessions.get(sid)
     elif event == "Stop":
-        bridge.notify_session(sid, "done")       # 応答完了 = 緑
+        bridge.clear_observed_input(sid)
+        state = "done"
+        bridge.notify_session(sid, state, family=family)
+        agent_index = bridge.sessions.get(sid)
+
+    # 承認保留中の上書き抑止が働いた場合は、実際に維持された状態を記録する
+    if state is not None and agent_index is not None and event != "SessionEnd":
+        state = bridge.agent_state.get(agent_index, {}).get("state", state)
+    if event == "StopFailure":
+        detail = body.get("error_type") or body.get("message")
+    elif event == "PostToolUseFailure":
+        detail = body.get("message") or body.get("error_type")
+    elif body.get("tool_input") is not None:
+        detail = json.dumps(body.get("tool_input"), ensure_ascii=False)[:200]
+    else:
+        detail = body.get("message") or body.get("error_type")
+    if detail is not None:
+        detail = str(detail)[:200]
+    bridge.events.append({
+        "ts": time.time(), "family": family, "session_id": sid,
+        "session_short": sid[:8], "event": event, "state": state,
+        "tool_name": body.get("tool_name"), "detail": detail,
+        "agent_index": agent_index,
+    })
     return web.json_response({"ok": True})
 
 
@@ -554,6 +727,8 @@ async def led_animator(app):
 
 
 async def on_startup(app):
+    if os.environ.get("CLAUDEMICRO_NO_DEVICE"):
+        return
     bridge.loop = asyncio.get_event_loop()
     bridge.adapter.start()
     app["mode_task"] = asyncio.create_task(mode_daemon(app))
