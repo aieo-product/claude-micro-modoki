@@ -27,13 +27,13 @@ Claude Code --PreToolUse hook--> hook_client.py --HTTP:35703--> bridge(server/) 
 
 ## セットアップ
 
-**→ [docs/setup.md](docs/setup.md) を参照**（要点: 有線モード＝白 / bridge に入力監視付与 / **公式アプリの入力監視を OFF にして連携を切る** / `.venv` で `server.main` 起動 / hook 設定）。
+macOS の設定は **→ [docs/setup.md](docs/setup.md) を参照**（要点: 有線モード＝白 / bridge に入力監視付与 / **公式アプリの入力監視を OFF にして連携を切る** / `.venv` で `server.main` 起動 / hook 設定）。Windows は後述の未検証手順を参照してください。
 
 旧 M5Stack 版（upstream）は `firmware/` と `bridge.py` に残置。
 
 ## トレイアプリ
 
-既存 bridge と設定コンソールを、macOS のメニューバーに常駐する薄いアプリ層から利用できます。追加の GUI 依存はヘッドレス bridge から分離されています。
+既存 bridge と設定コンソールを、デスクトップのメニューバー／システムトレイに常駐する薄いアプリ層から利用できます。追加の GUI 依存はヘッドレス bridge から分離されています。以下の例は macOS です。
 
 ```bash
 .venv/bin/pip install hidapi aiohttp
@@ -41,7 +41,7 @@ Claude Code --PreToolUse hook--> hook_client.py --HTTP:35703--> bridge(server/) 
 .venv/bin/python -m app
 ```
 
-既定の `35703` が使われている場合は既存 bridge を停止するか、CLI または環境変数で別ポートを指定します（CLI の指定が優先）。実機を使う bridge はポートが異なってもデバイスを奪い合うため、トレイアプリへ切り替える前に既存の手動起動・launchd サービスを停止してください。
+既定の `35703` が使われている場合は既存 bridge を停止するか、CLI または環境変数で別ポートを指定します（CLI の指定が優先）。実機を使う bridge はポートが異なってもデバイスを奪い合うため、トレイアプリへ切り替える前に既存の手動起動・常駐サービス（macOS の launchd など）を停止してください。
 
 ```bash
 .venv/bin/python -m app --port 35704
@@ -64,6 +64,63 @@ open dist/ClaudeMicro.app
 ```
 
 詳しい準備、launchd 版との切り替え、GUI の確認手順は [docs/setup.md](docs/setup.md#5-トレイアプリgui) を参照してください。
+
+## hook の手動インストール／削除
+
+hook インストーラーはアプリ起動やビルド時に自動実行されません。必ずユーザーが手動で実行し、書き込み前にクロスプラットフォーム Python 版の `--dry-run` で対象ファイル、追加・削除予定のフック、書き込み予定の有無を確認してください。選択肢は「mac は .sh / どの OS でも .py 可」です。
+
+macOS（`.sh` で書き込む場合も、先に `.py` でプレビュー）:
+
+```bash
+.venv/bin/python scripts/install_hooks.py --dry-run
+./scripts/install_hooks.sh
+.venv/bin/python scripts/uninstall_hooks.py --dry-run
+./scripts/uninstall_hooks.sh
+```
+
+どの OS でも Python 版でインストール／削除できます。Windows では以下を PowerShell から実行します。
+
+```powershell
+# インストール: プレビュー後に書き込み
+.\.venv\Scripts\python.exe .\scripts\install_hooks.py --dry-run
+.\.venv\Scripts\python.exe .\scripts\install_hooks.py
+
+# 削除: プレビュー後に書き込み
+.\.venv\Scripts\python.exe .\scripts\uninstall_hooks.py --dry-run
+.\.venv\Scripts\python.exe .\scripts\uninstall_hooks.py
+```
+
+## Windows サポート（実験的・未検証）
+
+**Windows は未検証です。動作報告・修正 PR を歓迎します。** Windows 実機での動作報告や問題は [GitHub issue #21](https://github.com/aieo-product/claude-micro-modoki/issues/21) へお寄せください。
+
+現在の未検証ポイントは次の 5 点です。
+
+- HID 共有 open
+- Claude Code / Codex hooks の発火
+- Windows パスの解決
+- PyInstaller による `.exe` ビルドと起動
+- 前面アプリ検知（未実装）
+
+Windows の前面アプリ検知は未実装のため、auto モードは実質無効です。手動モードは利用可能な想定です。
+
+PowerShell で仮想環境を作成し、依存を入れて起動します。
+
+```powershell
+py -3 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install hidapi aiohttp
+.\.venv\Scripts\python.exe -m pip install -r requirements-app.txt
+.\.venv\Scripts\python.exe -m app
+```
+
+Windows 版の PyInstaller は同じ Windows 環境上で実行します。ビルドスクリプトも未検証です。
+
+```powershell
+.\scripts\build_app.ps1
+.\dist\ClaudeMicro\ClaudeMicro.exe
+```
+
+hook のインストールと削除は自動実行されません。前節の Python 版コマンドを手動で実行し、必ず `--dry-run` を先に確認してください。
 
 ## ライセンス
 

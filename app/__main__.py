@@ -20,9 +20,14 @@ def _port(value: str) -> int:
 
 
 def _parser() -> argparse.ArgumentParser:
+    description = (
+        "Run the ClaudeMicro bridge as a macOS tray application."
+        if sys.platform == "darwin"
+        else "Run the ClaudeMicro bridge as a desktop tray application."
+    )
     parser = argparse.ArgumentParser(
         prog="python -m app",
-        description="Run the ClaudeMicro bridge as a macOS tray application.",
+        description=description,
     )
     parser.add_argument(
         "--port",

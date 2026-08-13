@@ -18,6 +18,7 @@ import urllib.request
 try:
     import fcntl  # ログの排他ロック用 (macOS/Linux)
 except ImportError:
+    # Windows など fcntl が使えない環境では、ログをロックなしで追記する。
     fcntl = None
 
 # 依存なし・軽量のため stdlib urllib を使用（フックは毎イベント別プロセス起動のため import を最小化）

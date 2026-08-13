@@ -26,6 +26,7 @@ open にはターミナル/プロセスへの入力監視権限が必要。
 import ctypes
 import itertools
 import json
+import sys
 import threading
 import time
 
@@ -34,12 +35,14 @@ try:
 except ImportError:  # hidapi 未導入でも bridge 自体は起動できるようにする
     hid = None
 else:
-    # macOS: デフォルトの排他 open (seize) は ChatGPT アプリ等が掴んでいると失敗する。
-    # cython-hidapi は Python API に出していないため C シンボルを直接叩いて非排他にする
-    try:
-        ctypes.CDLL(hid.__file__).hid_darwin_set_open_exclusive(0)
-    except (OSError, AttributeError):
-        pass  # macOS 以外 or シンボルなし
+    # Windows の vendor usage page HID は既定で共有 open 可の想定だが、実機未検証。
+    if sys.platform == "darwin":
+        # macOS: デフォルトの排他 open (seize) は ChatGPT アプリ等が掴んでいると失敗する。
+        # cython-hidapi は Python API に出していないため C シンボルを直接叩いて非排他にする
+        try:
+            ctypes.CDLL(hid.__file__).hid_darwin_set_open_exclusive(0)
+        except (OSError, AttributeError):
+            pass  # シンボルなし
 
 RETRY_INTERVAL_SEC = 3.0
 READ_TIMEOUT_MS = 50
