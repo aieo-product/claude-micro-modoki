@@ -1,0 +1,183 @@
+{
+  "device": {
+    "found": false,
+    "open": false,
+    "error": null,
+    "fw": null
+  },
+  "brightness": 100,
+  "led_control": true,
+  "pending": [],
+  "sessions": {
+    "demo-claude-think": 1,
+    "demo-claude-input": 2,
+    "demo-claude-done": 3,
+    "demo-codex-appr": 4,
+    "demo-codex-err": 5
+  },
+  "session_info": {
+    "demo-claude-think": {
+      "cmux_workspace_id": null,
+      "is_cmux": false,
+      "cwd": "/work/projA"
+    },
+    "demo-claude-input": {
+      "cmux_workspace_id": null,
+      "is_cmux": false,
+      "cwd": "/work/projB"
+    },
+    "demo-claude-done": {
+      "cmux_workspace_id": null,
+      "is_cmux": false,
+      "cwd": "/work/projC"
+    },
+    "demo-codex-appr": {
+      "cmux_workspace_id": null,
+      "is_cmux": false,
+      "cwd": "/work/projD"
+    },
+    "demo-codex-err": {
+      "cmux_workspace_id": null,
+      "is_cmux": false,
+      "cwd": "/work/projE"
+    }
+  },
+  "agent_state": {
+    "1": {
+      "state": "thinking",
+      "family": "claude"
+    },
+    "2": {
+      "state": "input",
+      "family": "claude"
+    },
+    "3": {
+      "state": "done",
+      "family": "claude"
+    },
+    "4": {
+      "state": "input",
+      "family": "codex"
+    },
+    "5": {
+      "state": "error",
+      "family": "codex"
+    }
+  },
+  "events": [
+    {
+      "ts": 1786583132.5271559,
+      "family": "codex",
+      "session_id": "demo-codex-err",
+      "session_short": "demo-cod",
+      "event": "StopFailure",
+      "state": "error",
+      "tool_name": null,
+      "detail": "rate_limit",
+      "agent_index": 5
+    },
+    {
+      "ts": 1786583132.5267708,
+      "family": "codex",
+      "session_id": "demo-codex-err",
+      "session_short": "demo-cod",
+      "event": "SessionStart",
+      "state": "idle",
+      "tool_name": null,
+      "detail": null,
+      "agent_index": 5
+    },
+    {
+      "ts": 1786583132.526379,
+      "family": "codex",
+      "session_id": "demo-codex-appr",
+      "session_short": "demo-cod",
+      "event": "PermissionRequest",
+      "state": "input",
+      "tool_name": "apply_patch",
+      "detail": "{\"command\": \"*** Begin Patch ...\"}",
+      "agent_index": 4
+    },
+    {
+      "ts": 1786583132.525972,
+      "family": "codex",
+      "session_id": "demo-codex-appr",
+      "session_short": "demo-cod",
+      "event": "SessionStart",
+      "state": "idle",
+      "tool_name": null,
+      "detail": null,
+      "agent_index": 4
+    },
+    {
+      "ts": 1786583132.525559,
+      "family": "claude",
+      "session_id": "demo-claude-done",
+      "session_short": "demo-cla",
+      "event": "Stop",
+      "state": "done",
+      "tool_name": null,
+      "detail": null,
+      "agent_index": 3
+    },
+    {
+      "ts": 1786583132.52514,
+      "family": "claude",
+      "session_id": "demo-claude-done",
+      "session_short": "demo-cla",
+      "event": "SessionStart",
+      "state": "idle",
+      "tool_name": null,
+      "detail": null,
+      "agent_index": 3
+    },
+    {
+      "ts": 1786583132.5246348,
+      "family": "claude",
+      "session_id": "demo-claude-input",
+      "session_short": "demo-cla",
+      "event": "Notification",
+      "state": "input",
+      "tool_name": null,
+      "detail": "Bash の実行許可",
+      "agent_index": 2
+    },
+    {
+      "ts": 1786583132.524043,
+      "family": "claude",
+      "session_id": "demo-claude-input",
+      "session_short": "demo-cla",
+      "event": "SessionStart",
+      "state": "idle",
+      "tool_name": null,
+      "detail": null,
+      "agent_index": 2
+    },
+    {
+      "ts": 1786583132.52355,
+      "family": "claude",
+      "session_id": "demo-claude-think",
+      "session_short": "demo-cla",
+      "event": "UserPromptSubmit",
+      "state": "thinking",
+      "tool_name": null,
+      "detail": null,
+      "agent_index": 1
+    },
+    {
+      "ts": 1786583132.522827,
+      "family": "claude",
+      "session_id": "demo-claude-think",
+      "session_short": "demo-cla",
+      "event": "SessionStart",
+      "state": "idle",
+      "tool_name": null,
+      "detail": null,
+      "agent_index": 1
+    }
+  ],
+  "last_raw_key": null,
+  "mode": "cmux-claude",
+  "auto_mode": true,
+  "selected_agent": null
+}
