@@ -3,7 +3,8 @@
 - PreToolUse: 承認要求として POST /decision。**フェイルセーフ**: bridge の明示 deny/timeout は deny、
   それ以外の失敗(不通/HTTPタイムアウト/5xx/非JSON)は "ask"(手動承認)にフォールバックし、
   **決して auto-allow に素通りさせない**（承認ゲートが過負荷時に消えないようにする）。
-- SessionStart / Stop / SessionEnd / Notification: POST /api/event（フェイルオープン: Claude を止めない）。
+- PreToolUse 以外のライフサイクルイベント: POST /api/event
+  （フェイルオープン: Claude を止めない）。
   cmux 内セッションは CMUX_WORKSPACE_ID 等を捕捉して送る（エージェントキー前面化に使用, #4）。
 """
 
@@ -25,6 +26,9 @@ TOKEN = os.environ.get("APPROVAL_BRIDGE_TOKEN", "")
 LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "claudecode.log")
 LOG_MAX = 512 * 1024  # 超過でローテーション(先頭を破棄)
 DECISION_TIMEOUT = 240
+
+# loopback 宛のトークン/cwd/tool_input を環境変数の外部 proxy へ流さない。
+opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
 def log(msg: str):
@@ -52,7 +56,7 @@ def post(path: str, payload: dict, timeout: float):
     if TOKEN:
         hdr["X-Bridge-Token"] = TOKEN
     req = urllib.request.Request(BRIDGE + path, data=body, headers=hdr, method="POST")
-    return urllib.request.urlopen(req, timeout=timeout)
+    return opener.open(req, timeout=timeout)
 
 
 def emit(decision: str, reason: str):
@@ -84,28 +88,40 @@ def handle_decision(data: dict) -> int:
         emit("ask", "bridge 不通/タイムアウト → 手動承認")  # #3: fail-safe
         return 0
     try:
-        result = json.loads(raw).get("result")
-    except ValueError:
+        response = json.loads(raw)
+        if not isinstance(response, dict):
+            raise TypeError("bridge response is not an object")
+        result = response.get("result")
+    except (TypeError, ValueError):
         emit("ask", "bridge 非JSON応答 → 手動承認")  # #4: crashさせずfail-safe
         return 0
-    decision, reason = {
-        "accept": ("allow", "approved by bridge"),
-        "fallback": ("ask", "held by bridge, manual approval"),
-        "deny": ("deny", "denied by bridge"),
-    }.get(result, ("deny", f"denied by bridge (result={result})"))  # timeout/不明→deny(フェイルクローズ)
+    if result == "accept":
+        decision, reason = "allow", "approved by bridge"
+    elif result == "fallback":
+        decision, reason = "ask", "held by bridge, manual approval"
+    elif result == "deny":
+        decision, reason = "deny", "denied by bridge"
+    else:
+        decision, reason = "deny", f"denied by bridge (result={result})"  # timeout/不明→deny
     emit(decision, reason)
     return 0
 
 
 def handle_event(event: str, data: dict) -> int:
-    """SessionStart/Stop/SessionEnd/Notification: 状態通知。フェイルオープン。
+    """PreToolUse 以外: 状態通知。フェイルオープン。
     ただし 401 等の失敗はログに残す（トークン不一致で全ライフサイクルが黙って落ちるのを可視化, #5）。"""
     payload = {
         "event": event,
+        "family": "claude",
         "session_id": data.get("session_id"),
         "cwd": data.get("cwd"),
         "source": data.get("source"),
-        "message": data.get("message"),
+        "tool_name": data.get("tool_name"),
+        "tool_input": data.get("tool_input"),
+        "notification_type": data.get("notification_type"),
+        "error_type": data.get("error_type"),
+        "message": data.get("message") or data.get("error_message") or data.get("tool_error"),
+        "turn_id": data.get("turn_id"),
         "env": cmux_env(),
     }
     log(f"[{event}] session={payload['session_id']} cmux={payload['env']['is_cmux']}")
@@ -121,10 +137,11 @@ def handle_event(event: str, data: dict) -> int:
 
 
 def main() -> int:
-    raw = sys.stdin.read()
     try:
-        data = json.loads(raw)
-    except ValueError:
+        data = json.loads(sys.stdin.read())
+    except (OSError, TypeError, ValueError):
+        return 0
+    if not isinstance(data, dict):
         return 0
     event = data.get("hook_event_name") or "PreToolUse"
     if event == "PreToolUse":

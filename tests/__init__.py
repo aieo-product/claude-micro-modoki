@@ -1,0 +1,1 @@
+"""claudeMicro bridge のテスト。"""
