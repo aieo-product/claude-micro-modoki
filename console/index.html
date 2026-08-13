@@ -521,15 +521,18 @@ $("m-learn").onclick = async () => {
 
 $("m-save").onclick = () => {
   const role = $("m-role").value;
+  // 既存 binding のアイコンを退避（カタログ外アクションで正準アイコンが引けない場合の保険）
+  let prevIcon = null;
   for (const [k, b] of Object.entries(config.keys || {}))
-    if (b.pos === editingPos) delete config.keys[k];
+    if (b.pos === editingPos) { if (b.icon) prevIcon = b.icon; delete config.keys[k]; }
   if (role !== "none") {
     if (!learnedKeyId) { toast("先にキー学習で実機キーを紐付けてください"); return; }
     if (role === "agent") {
       config.keys[learnedKeyId] = {pos: editingPos, role, index: parseInt($("m-index").value)};
     } else {
+      // アイコンは選択アクションの正準アイコンに固定（本家同等）。カタログ外アクション時のみ既存アイコンを保持。
       const act = actionById(selectedAction);
-      config.keys[learnedKeyId] = {pos: editingPos, role: "action", action: selectedAction, icon: act?.icon};
+      config.keys[learnedKeyId] = {pos: editingPos, role: "action", action: selectedAction, icon: act?.icon ?? prevIcon};
     }
   }
   $("overlay").classList.remove("show");
