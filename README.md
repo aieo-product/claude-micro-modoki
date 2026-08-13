@@ -31,6 +31,40 @@ Claude Code --PreToolUse hook--> hook_client.py --HTTP:35703--> bridge(server/) 
 
 旧 M5Stack 版（upstream）は `firmware/` と `bridge.py` に残置。
 
+## トレイアプリ
+
+既存 bridge と設定コンソールを、macOS のメニューバーに常駐する薄いアプリ層から利用できます。追加の GUI 依存はヘッドレス bridge から分離されています。
+
+```bash
+.venv/bin/pip install hidapi aiohttp
+.venv/bin/pip install -r requirements-app.txt
+.venv/bin/python -m app
+```
+
+既定の `35703` が使われている場合は既存 bridge を停止するか、CLI または環境変数で別ポートを指定します（CLI の指定が優先）。実機を使う bridge はポートが異なってもデバイスを奪い合うため、トレイアプリへ切り替える前に既存の手動起動・launchd サービスを停止してください。
+
+```bash
+.venv/bin/python -m app --port 35704
+CLAUDEMICRO_PORT=35704 .venv/bin/python -m app
+```
+
+現在の hook クライアントは `35703` を使用するため、別ポート指定は主にデバイス無効時の衝突回避・コンソール確認用です。通常の承認フローでは hook と bridge のポートを一致させてください。
+
+GUI を出さない起動確認では、GUI 依存を import せず、OS が選ぶ空きポートで bridge の応答と終了処理を検証します。
+
+```bash
+CLAUDEMICRO_NO_DEVICE=1 .venv/bin/python -m app --smoke
+```
+
+macOS アプリのビルドは、アプリ用依存をインストールした `.venv` から行います。
+
+```bash
+./scripts/build_app.sh
+open dist/ClaudeMicro.app
+```
+
+詳しい準備、launchd 版との切り替え、GUI の確認手順は [docs/setup.md](docs/setup.md#5-トレイアプリgui) を参照してください。
+
 ## ライセンス
 
 MIT License — upstream: © 2026 Mitsumine Suzu (verylowfreq) / fork 部分: © 2026 aieo-product

@@ -51,7 +51,56 @@ python3 -m venv .venv
 
 設定コンソール: http://127.0.0.1:35703/ （Claude 配色。モード切替・キー割当）
 
-## 5. 常駐化（launchd）
+## 5. トレイアプリ（GUI）
+
+macOS のメニューバーから設定コンソールを開く場合は、bridge の基本依存に加えてアプリ用依存をインストールします。`pystray` / `pywebview` / Pillow は `server.main` には不要で、PyInstaller はビルド時だけ使用します。
+
+```bash
+.venv/bin/pip install -r requirements-app.txt
+.venv/bin/python -m app
+```
+
+トレイメニューから「コンソールを開く」「ブラウザで開く」「終了」を選べます。コンソール窓を閉じても bridge とトレイは常駐し、「コンソールを開く」で再表示できます。
+
+### ポートを変更する
+
+既定ポートはヘッドレス bridge と同じ `35703` です。すでに使用中ならトレイアプリはエラーを表示して終了するため、先に既存 bridge を停止するか、空いているポートを指定してください。`--port` は `CLAUDEMICRO_PORT` より優先されます。実機を使う bridge はポートが異なってもデバイスを奪い合うため、トレイアプリへ切り替える前に既存の手動起動・launchd サービスを必ず停止してください。
+
+```bash
+.venv/bin/python -m app --port 35704
+CLAUDEMICRO_PORT=35704 .venv/bin/python -m app
+```
+
+現在の `hook_client.py` / `codex_hook_client.py` は `35703` に接続します。別ポートは主にデバイス無効時の衝突回避・コンソール確認用で、承認フローを使う場合は hook の接続先と bridge のポートを一致させる必要があります。
+
+### GUI を出さないスモークテスト
+
+`--smoke` は GUI パッケージを import せず、OS が割り当てた空きポートで bridge を起動し、HTTP 応答を確認してから終了します。CI や GUI 依存の未インストール環境でも利用できます。
+
+```bash
+CLAUDEMICRO_NO_DEVICE=1 .venv/bin/python -m app --smoke
+```
+
+### macOS アプリをビルドする
+
+`requirements-app.txt` をインストールした `.venv` を用意し、リポジトリ直下から次を実行します。PyInstaller が設定コンソールを同梱した windowed アプリを `dist/ClaudeMicro.app` に生成します。
+
+```bash
+./scripts/build_app.sh
+open dist/ClaudeMicro.app
+```
+
+### GUI の動作確認
+
+1. 実機を使っているヘッドレス bridge / launchd サービスをすべて停止する（デバイス無効で UI だけを確認する場合は `CLAUDEMICRO_NO_DEVICE=1` と空きの `--port` を指定してもよい）
+2. `.venv/bin/python -m app`（UI だけなら `CLAUDEMICRO_NO_DEVICE=1 .venv/bin/python -m app --port 35704`）を実行し、Claude 配色の丸いトレイアイコンと設定コンソールが表示されることを確認する
+3. コンソール窓を閉じてもトレイが残り、「コンソールを開く」で窓が再表示されることを確認する
+4. 「ブラウザで開く」で同じ設定コンソールが既定ブラウザに表示されることを確認する
+5. 「終了」でトレイと bridge が終了し、使用していたポートが解放されることを確認する
+
+初回起動時は、ソース起動なら使用するターミナルアプリ、バンドル起動なら `ClaudeMicro.app` に手順 2 の入力監視権限を付与してください。
+
+## 6. 常駐化（launchd）
 
 手順 4 で `.venv` を準備し、手動起動中の bridge があれば `Ctrl-C` で停止してから、次のスクリプトを実行します。bridge が現在のログインセッションで起動し、以後はログイン時にも自動起動します。異常終了した場合だけ再起動し、正常終了後は再起動しません。
 
@@ -77,7 +126,9 @@ python3 -m venv .venv
 
 アンインストールは launchd の登録と plist を削除します。ログファイルは削除しません。再び常駐させる場合はインストールスクリプトをもう一度実行してください。
 
-## 6. Claude Code の hook 設定
+トレイアプリも同じ bridge とデバイスを使用するため、この launchd サービスと同時に起動しないでください。トレイアプリへ切り替える場合は、先にサービスをアンインストールしてください。
+
+## 7. Claude Code の hook 設定
 
 `examples/settings.local.json` を参考に、PreToolUse hook で `hook_client.py` を呼ぶよう設定する
 （`~/.claude/settings.json` 等。パスは各自の配置に合わせる）。

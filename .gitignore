@@ -2,6 +2,9 @@
 __pycache__/
 *.pyc
 .DS_Store
+# PyInstaller output
+dist/
+build/
 claudecode.log
 codexhook.log
 # codex 実行/レビューの一時ログ・レビューバンドル・実装スペック (コミットしない)

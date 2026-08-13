@@ -1,0 +1,7 @@
+# Tray application runtime dependencies (not required by `server.main`).
+pystray>=0.19.5,<0.20
+pywebview>=6.0,<7
+pillow
+
+# Build-time only; the headless bridge does not import or require PyInstaller.
+pyinstaller
