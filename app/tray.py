@@ -25,7 +25,7 @@ from server import main as server_main
 
 SERVER_DEFAULT_PORT = server_main.PORT
 START_TIMEOUT_SECONDS = 15.0
-STOP_TIMEOUT_SECONDS = 10.0
+STOP_TIMEOUT_SECONDS = 2.0
 RUNNER_SHUTDOWN_SECONDS = 3.0
 SMOKE_HTTP_TIMEOUT_SECONDS = 5.0
 FAMILY_COLOR = "#D97757"
@@ -112,8 +112,17 @@ class EmbeddedBridge:
             stop_event = self._stop_event
         if loop is None or stop_event is None or loop.is_closed():
             return
+
+        def deny_pending_and_stop() -> None:
+            # Run Future resolution on the bridge loop. This fail-closes pending
+            # decisions even if _serve() never reaches its cleanup block.
+            try:
+                _deny_pending_requests()
+            finally:
+                stop_event.set()
+
         with suppress(RuntimeError):
-            loop.call_soon_threadsafe(stop_event.set)
+            loop.call_soon_threadsafe(deny_pending_and_stop)
 
     def stop(self) -> None:
         """Request graceful cleanup and wait for the owning loop to finish."""
@@ -124,7 +133,11 @@ class EmbeddedBridge:
         self.request_stop()
         self._thread.join(STOP_TIMEOUT_SECONDS)
         if self._thread.is_alive():
-            raise AppError("timed out while stopping the embedded bridge")
+            print(
+                "ClaudeMicro: bridge 停止待ちを打ち切りました(プロセス終了で回収)",
+                file=sys.stderr,
+            )
+            return
         if self._error is not None and self.port is not None:
             raise AppError(f"embedded bridge shutdown failed: {self._error}")
 
@@ -173,7 +186,14 @@ class EmbeddedBridge:
                     _deny_pending_requests()
                 finally:
                     if runner is not None:
-                        await runner.cleanup()
+                        # Issue cancellation (including any in-flight osascript)
+                        # before entering aiohttp's one bounded cleanup phase.
+                        server_main.cancel_background_tasks(runner.app)
+                        with suppress(asyncio.TimeoutError):
+                            await asyncio.wait_for(
+                                runner.cleanup(),
+                                RUNNER_SHUTDOWN_SECONDS + 1,
+                            )
             finally:
                 try:
                     # server.main deliberately owns core behavior only; the desktop

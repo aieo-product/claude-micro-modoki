@@ -1,5 +1,7 @@
 """Windows compatibility guards that can be exercised without hardware."""
 
+import asyncio
+import io
 import os
 from pathlib import Path
 import subprocess
@@ -18,12 +20,222 @@ with mock.patch.object(
         config_mod, "load",
         return_value=config_mod._deep_merge(config_mod.DEFAULT_CONFIG, {})):
     from server import main as server_main
+from app import tray as app_tray
 
 
 _FRONTMOST_APP_SCRIPT = (
     'tell application "System Events" to name of first application process '
     'whose frontmost is true'
 )
+
+
+class ModeCandidateHysteresisTests(unittest.TestCase):
+    def test_only_confirms_after_two_consecutive_matching_candidates(self):
+        last_candidate = None
+        observations = 0
+        confirmed_modes = []
+
+        candidates = [
+            "claude-app",
+            "cmux-claude",
+            "claude-app",
+            "claude-app",
+            "claude-app",
+            "cmux-claude",
+            "cmux-claude",
+        ]
+        for candidate in candidates:
+            (last_candidate,
+             observations,
+             confirmed) = server_main._confirm_mode_candidate(
+                candidate, last_candidate, observations)
+            confirmed_modes.append(confirmed)
+
+        self.assertEqual(
+            confirmed_modes,
+            [None, None, None, "claude-app", None, None, "cmux-claude"],
+        )
+        self.assertIsNone(last_candidate)
+        self.assertEqual(observations, 0)
+
+
+class ModeDaemonHysteresisIntegrationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_resets_streaks_and_confirms_only_a_stable_candidate(self):
+        poll_sec = 0.25
+        all_modes = ["claude-app", "codex-app", "cmux-claude", "cmux-codex"]
+        without_codex_app = [mode for mode in all_modes if mode != "codex-app"]
+        cfg = config_mod._deep_merge(config_mod.DEFAULT_CONFIG, {})
+        cfg["mode"]["poll_sec"] = poll_sec
+
+        # Each reset follows a one-observation streak of the same candidate:
+        # current mode, auto off/on, disabled candidate, then no frontmost app.
+        observations = [
+            ("ChatGPT", all_modes),
+            ("Claude", all_modes),
+            ("ChatGPT", all_modes),
+            ("cmux", all_modes),
+            ("cmux", all_modes),
+            ("ChatGPT", all_modes),
+            ("ChatGPT", without_codex_app),
+            ("ChatGPT", all_modes),
+            ("cmux", all_modes),
+            (None, all_modes),
+            ("cmux", all_modes),
+            # Period-2 candidates must never be confirmed.
+            ("ChatGPT", all_modes),
+            ("cmux", all_modes),
+            ("ChatGPT", all_modes),
+            ("cmux", all_modes),
+            # A stable candidate is confirmed on its second observation.
+            ("ChatGPT", all_modes),
+            ("ChatGPT", all_modes),
+        ]
+        observation_index = 0
+        manual_pause_seen = False
+        confirmations = []
+
+        async def frontmost_app():
+            nonlocal observation_index
+            if observation_index >= len(observations):
+                raise asyncio.CancelledError
+            front, enabled = observations[observation_index]
+            observation_index += 1
+            cfg["mode"]["enabled"] = enabled
+            return front
+
+        async def advance_poll(delay):
+            nonlocal manual_pause_seen
+            if delay == poll_sec and observation_index == 4:
+                server_main.bridge.auto_mode = False
+            elif delay == 5 and not server_main.bridge.auto_mode:
+                manual_pause_seen = True
+                server_main.bridge.auto_mode = True
+
+        def record_confirmation(mode):
+            confirmations.append((observation_index, mode))
+
+        frontmost = mock.AsyncMock(side_effect=frontmost_app)
+        sleep = mock.AsyncMock(side_effect=advance_poll)
+        with mock.patch.object(server_main.bridge, "cfg", cfg), \
+                mock.patch.object(server_main.bridge, "mode", "claude-app"), \
+                mock.patch.object(server_main.bridge, "auto_mode", True), \
+                mock.patch.object(server_main, "_frontmost_app", frontmost), \
+                mock.patch.object(server_main.asyncio, "sleep", sleep), \
+                mock.patch.object(
+                    server_main.bridge,
+                    "set_mode",
+                    side_effect=record_confirmation,
+                ) as set_mode:
+            await server_main.mode_daemon({})
+
+        # N observations delay a switch by at most (N - 1) * poll_sec.
+        self.assertEqual(server_main.MODE_HYSTERESIS_OBSERVATIONS, 2)
+        self.assertTrue(manual_pause_seen)
+        self.assertEqual(frontmost.await_count, len(observations) + 1)
+        set_mode.assert_called_once_with("codex-app")
+        self.assertEqual(confirmations, [(len(observations), "codex-app")])
+
+
+class EmbeddedBridgeShutdownTests(unittest.IsolatedAsyncioTestCase):
+    async def test_request_stop_denies_pending_decisions_on_bridge_loop(self):
+        loop = asyncio.get_running_loop()
+        pending = loop.create_future()
+        already_resolved = loop.create_future()
+        already_resolved.set_result("accept")
+        stop_event = asyncio.Event()
+        bridge = app_tray.EmbeddedBridge(0)
+        with bridge._state_lock:
+            bridge._loop = loop
+            bridge._stop_event = stop_event
+
+        requests = {
+            1: {"future": pending},
+            2: {"future": already_resolved},
+        }
+        with mock.patch.object(server_main.bridge, "pending", requests):
+            bridge.request_stop()
+            await asyncio.sleep(0)
+            bridge.request_stop()
+            await asyncio.sleep(0)
+
+        self.assertTrue(bridge._stop_requested.is_set())
+        self.assertTrue(stop_event.is_set())
+        self.assertEqual(pending.result(), "deny")
+        self.assertEqual(already_resolved.result(), "accept")
+
+    async def test_stop_timeout_warns_and_returns_normally(self):
+        bridge = app_tray.EmbeddedBridge(0)
+        thread = mock.Mock()
+        thread.is_alive.side_effect = [True, True]
+        bridge._thread = thread
+
+        with mock.patch.object(bridge, "request_stop") as request_stop, \
+                mock.patch.object(
+                    app_tray.sys,
+                    "stderr",
+                    new_callable=io.StringIO,
+                ) as stderr:
+            result = bridge.stop()
+
+        self.assertIsNone(result)
+        self.assertEqual(app_tray.STOP_TIMEOUT_SECONDS, 2.0)
+        request_stop.assert_called_once_with()
+        thread.join.assert_called_once_with(2.0)
+        self.assertEqual(
+            stderr.getvalue().splitlines(),
+            ["ClaudeMicro: bridge 停止待ちを打ち切りました(プロセス終了で回収)"],
+        )
+
+    async def test_runner_cleanup_timeout_does_not_escape(self):
+        runner = mock.Mock()
+        runner.app = object()
+        runner.setup = mock.AsyncMock()
+
+        async def wait_forever():
+            await asyncio.Event().wait()
+
+        runner.cleanup = mock.AsyncMock(side_effect=wait_forever)
+        site = mock.Mock()
+        site.start = mock.AsyncMock()
+        bridge = app_tray.EmbeddedBridge(0)
+        bridge._stop_requested.set()
+
+        with mock.patch.object(app_tray.web, "AppRunner", return_value=runner), \
+                mock.patch.object(app_tray.web, "TCPSite", return_value=site), \
+                mock.patch.object(app_tray, "_actual_site_port", return_value=12345), \
+                mock.patch.object(app_tray, "RUNNER_SHUTDOWN_SECONDS", -0.99), \
+                mock.patch.object(
+                    server_main, "cancel_background_tasks", mock.Mock()), \
+                mock.patch.object(server_main.bridge.adapter, "stop") as stop:
+            await bridge._serve()
+
+        runner.cleanup.assert_awaited_once_with()
+        stop.assert_called_once_with()
+        self.assertIsNone(bridge._loop)
+        self.assertIsNone(bridge._stop_event)
+
+
+class BackgroundTaskCleanupTests(unittest.IsolatedAsyncioTestCase):
+    async def test_cleanup_cancels_and_awaits_both_tasks(self):
+        finished = []
+
+        async def background(name):
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                await asyncio.sleep(0)
+                finished.append(name)
+
+        tasks = {
+            "mode_task": asyncio.create_task(background("mode")),
+            "led_task": asyncio.create_task(background("led")),
+        }
+        await asyncio.sleep(0)
+
+        await server_main.on_cleanup(tasks)
+
+        self.assertTrue(all(task.done() for task in tasks.values()))
+        self.assertCountEqual(finished, ["mode", "led"])
 
 
 class FrontmostAppPlatformTests(unittest.IsolatedAsyncioTestCase):
@@ -57,6 +269,22 @@ class FrontmostAppPlatformTests(unittest.IsolatedAsyncioTestCase):
             stderr=server_main.asyncio.subprocess.DEVNULL,
         )
         process.communicate.assert_awaited_once_with()
+
+    async def test_cancellation_kills_and_reaps_osascript_then_propagates(self):
+        process = mock.Mock()
+        process.communicate = mock.AsyncMock(
+            side_effect=asyncio.CancelledError)
+        process.wait = mock.AsyncMock()
+        spawn = mock.AsyncMock(return_value=process)
+
+        with mock.patch.object(server_main.sys, "platform", "darwin"), \
+                mock.patch.object(
+                    server_main.asyncio, "create_subprocess_exec", spawn):
+            with self.assertRaises(asyncio.CancelledError):
+                await server_main._frontmost_app()
+
+        process.kill.assert_called_once_with()
+        process.wait.assert_awaited_once_with()
 
 
 class FocusSessionPlatformTests(unittest.IsolatedAsyncioTestCase):
