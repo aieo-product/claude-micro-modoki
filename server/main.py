@@ -16,6 +16,7 @@ import collections
 import itertools
 import json
 import os
+import sys
 import time
 
 from aiohttp import web
@@ -364,9 +365,12 @@ class Bridge:
                 ws = info["cmux_workspace_id"]
                 await self._run(cli, "workspace-action", "--action", "select", "--workspace", ws)
                 await self._run(cli, "focus-window", "--window", "window:1")
-            else:
+            elif sys.platform == "darwin":
                 app = "Claude" if actions_mod.mode_family(self.mode) == "claude" else self.cfg["mode"]["codex_app"]
                 await self._run("open", "-a", app)
+            else:
+                # TODO(win32): アプリ前面化
+                pass
         except Exception as e:
             print(f"[agent] focus 失敗: {e}", flush=True)
 
@@ -653,6 +657,9 @@ async def handle_index(request: web.Request):
 
 async def _frontmost_app() -> str | None:
     """最前面アプリ名を取得 (macOS)。失敗時 None。"""
+    if sys.platform != "darwin":
+        # TODO(win32): 前面アプリ検知
+        return None
     try:
         proc = await asyncio.create_subprocess_exec(
             "osascript", "-e",

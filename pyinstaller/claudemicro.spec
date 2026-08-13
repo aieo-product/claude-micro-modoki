@@ -1,6 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller definition for the macOS ClaudeMicro tray application."""
+"""PyInstaller definition for the ClaudeMicro desktop tray application."""
 
+import sys
 from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_all
@@ -9,7 +10,7 @@ from PyInstaller.utils.hooks import collect_all
 PROJECT_ROOT = Path(SPECPATH).parent
 
 # app.tray intentionally imports GUI packages lazily so `--smoke` and the
-# headless server work without them. Collect their dynamically selected macOS
+# headless server work without them. Collect their dynamically selected GUI
 # backends and package data explicitly for the frozen application.
 gui_datas = []
 gui_binaries = []
@@ -61,17 +62,18 @@ coll = COLLECT(
     upx_exclude=[],
     name="ClaudeMicro",
 )
-app = BUNDLE(
-    coll,
-    name="ClaudeMicro.app",
-    icon=None,
-    bundle_identifier="com.aieoproduct.claudemicro",
-    info_plist={
-        # A menu-bar utility: do not leave a second, redundant Dock icon.
-        "LSUIElement": True,
-        "NSHighResolutionCapable": True,
-        "NSInputMonitoringUsageDescription": (
-            "Codex Micro の物理キー入力の読み取りに使用します"
-        ),
-    },
-)
+if sys.platform == "darwin":
+    app = BUNDLE(
+        coll,
+        name="ClaudeMicro.app",
+        icon=None,
+        bundle_identifier="com.aieoproduct.claudemicro",
+        info_plist={
+            # A menu-bar utility: do not leave a second, redundant Dock icon.
+            "LSUIElement": True,
+            "NSHighResolutionCapable": True,
+            "NSInputMonitoringUsageDescription": (
+                "Codex Micro の物理キー入力の読み取りに使用します"
+            ),
+        },
+    )

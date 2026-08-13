@@ -235,9 +235,14 @@ def _load_gui_dependencies() -> tuple[Any, Any, Any, Any]:
         from PIL import Image, ImageDraw
     except ImportError as exc:
         package = exc.name or "a GUI package"
+        install_hint = (
+            r".venv\Scripts\python.exe -m pip install -r requirements-app.txt"
+            if sys.platform == "win32"
+            else ".venv/bin/pip install -r requirements-app.txt"
+        )
         raise AppError(
             f"missing GUI dependency {package!r}; "
-            "install with '.venv/bin/pip install -r requirements-app.txt'"
+            f"install with '{install_hint}'"
         ) from exc
     return pystray, webview, Image, ImageDraw
 
