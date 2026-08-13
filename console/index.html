@@ -46,11 +46,15 @@
   /* スコープバッジ (共通/claude/codex) */
   .scope-badge { display:inline-block; font-size:10px; font-weight:700; padding:1px 6px; border-radius:5px; color:#fff; }
   .scope-common { background:#6B7280; } .scope-claude { background: var(--accent); } .scope-codex { background:#0A84FF; }
-  /* アイコンピッカー */
-  .icon-picker { display:grid; grid-template-columns: repeat(10, 1fr); gap:4px; max-height:120px; overflow-y:auto; padding:8px; background:var(--input); border-radius:10px; }
-  .icon-opt { font-size:18px; text-align:center; padding:4px 0; border-radius:6px; cursor:pointer; border:2px solid transparent; }
-  .icon-opt:hover { background: var(--bg); }
-  .icon-opt.sel { border-color: var(--accent); background: var(--bg); }
+  /* アクションピッカー（アイコン=アクションのタイル。本家 Codex Micro 同等） */
+  .action-grid { max-height:260px; overflow-y:auto; padding:8px; background:var(--input); border-radius:10px; }
+  .action-grid .grp-label { font-size:11px; font-weight:700; color:var(--sub); margin:6px 2px 4px; }
+  .action-grid .grp { display:grid; grid-template-columns: repeat(5, 1fr); gap:6px; }
+  .action-opt { display:flex; flex-direction:column; align-items:center; gap:3px; padding:8px 2px; border-radius:8px; cursor:pointer; border:2px solid transparent; text-align:center; }
+  .action-opt:hover { background: var(--bg); }
+  .action-opt.sel { border-color: var(--accent); background: var(--bg); }
+  .action-opt .a-icon { font-size:22px; line-height:1; }
+  .action-opt .a-label { font-size:10.5px; color:var(--text); line-height:1.15; }
   select, input[type=number] {
     font: inherit; padding: 5px 10px; border-radius: 8px;
     border: 1px solid var(--border); background: var(--input); color: var(--text);
@@ -316,9 +320,9 @@
     </div>
     <div id="m-action-field" style="margin-bottom:14px">
       <div class="field" style="margin-bottom:8px"><span>アクション</span>
-        <select id="m-action"></select>
+        <span class="sub" id="m-action-current">未選択</span>
       </div>
-      <div id="m-icon-picker" class="icon-picker"></div>
+      <div id="m-action-grid" class="action-grid"></div>
     </div>
     <div class="learn-box" id="m-keyid">未学習（実機キー未紐付け）</div>
     <div class="actions">
@@ -346,7 +350,7 @@ let config = null;
 let catalog = {actions:[], modes:[], icon_choices:[]};
 let editingPos = null;
 let learnedKeyId = null;
-let selectedIcon = null;
+let selectedAction = null;
 
 const STATE_VIEW = {
   idle: {label: "待機", color: "#B9B6AC"},
@@ -450,40 +454,36 @@ function renderPad() {
   }
 }
 
-function renderActionSelect(selected) {
-  const sel = $("m-action");
-  sel.innerHTML = "";
+// アイコン=アクションのタイルグリッド。タイルを選ぶと所定のアクションが
+// そのまま反映される（本家 Codex Micro の設定画面と同等。アイコンは各アクション固定）。
+function renderActionGrid() {
+  const wrap = $("m-action-grid");
+  wrap.innerHTML = "";
   for (const scope of ["common", "claude", "codex"]) {
-    const grp = document.createElement("optgroup");
-    grp.label = SCOPE_LABEL[scope];
-    for (const a of catalog.actions.filter(x => x.scope === scope)) {
-      const o = document.createElement("option");
-      o.value = a.id; o.textContent = `${a.icon}  ${a.label}`;
-      if (a.id === selected) o.selected = true;
-      grp.appendChild(o);
+    const actions = catalog.actions.filter(x => x.scope === scope);
+    if (!actions.length) continue;
+    const label = document.createElement("div");
+    label.className = "grp-label";
+    label.textContent = SCOPE_LABEL[scope];
+    wrap.appendChild(label);
+    const grp = document.createElement("div");
+    grp.className = "grp";
+    for (const a of actions) {
+      const d = document.createElement("div");
+      d.className = "action-opt" + (a.id === selectedAction ? " sel" : "");
+      d.title = a.label;
+      d.innerHTML = `<span class="a-icon">${a.icon}</span><span class="a-label">${a.label}</span>`;
+      d.onclick = () => { selectedAction = a.id; renderActionGrid(); updateActionCurrent(); };
+      grp.appendChild(d);
     }
-    sel.appendChild(grp);
+    wrap.appendChild(grp);
   }
 }
 
-function renderIconPicker() {
-  const p = $("m-icon-picker");
-  p.innerHTML = "";
-  for (const ic of catalog.icon_choices) {
-    const d = document.createElement("div");
-    d.className = "icon-opt" + (ic === selectedIcon ? " sel" : "");
-    d.textContent = ic;
-    d.onclick = () => { selectedIcon = ic; renderIconPicker(); };
-    p.appendChild(d);
-  }
+function updateActionCurrent() {
+  const a = actionById(selectedAction);
+  $("m-action-current").textContent = a ? `${a.icon} ${a.label}` : "未選択";
 }
-
-$("m-action").onchange = () => {
-  // アクション変更時、まだアイコン未選択ならそのアクションの既定アイコンに追従
-  const a = actionById($("m-action").value);
-  selectedIcon = a?.icon || selectedIcon;
-  renderIconPicker();
-};
 
 function openModal(pos) {
   editingPos = pos;
@@ -492,10 +492,9 @@ function openModal(pos) {
   $("m-title").textContent = `キーを編集 — ${pos.toUpperCase()}`;
   $("m-role").value = (b?.role && b.role !== "none") ? b.role : "none";
   $("m-index").value = String(b?.index ?? "1");
-  const actId = b?.action || (catalog.actions[0] && catalog.actions[0].id);
-  renderActionSelect(actId);
-  selectedIcon = b?.icon || actionById(actId)?.icon || catalog.icon_choices[0];
-  renderIconPicker();
+  selectedAction = b?.action || (catalog.actions[0] && catalog.actions[0].id);
+  renderActionGrid();
+  updateActionCurrent();
   $("m-keyid").textContent = keyId ? `実機キー: ${keyId}` : "未学習（実機キー未紐付け）";
   updateRoleFields();
   $("overlay").classList.add("show");
@@ -529,7 +528,8 @@ $("m-save").onclick = () => {
     if (role === "agent") {
       config.keys[learnedKeyId] = {pos: editingPos, role, index: parseInt($("m-index").value)};
     } else {
-      config.keys[learnedKeyId] = {pos: editingPos, role: "action", action: $("m-action").value, icon: selectedIcon};
+      const act = actionById(selectedAction);
+      config.keys[learnedKeyId] = {pos: editingPos, role: "action", action: selectedAction, icon: act?.icon};
     }
   }
   $("overlay").classList.remove("show");
