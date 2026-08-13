@@ -1,6 +1,6 @@
 """Claude Code hook → bridge クライアント (v2, issue #2/#4/#6)。
 
-- PreToolUse: 承認要求として POST /decision。**フェイルセーフ**: bridge の明示 deny/timeout は deny、
+- PreToolUse: 対象ツールを承認要求として POST /decision。**フェイルセーフ**: bridge の明示 deny/timeout は deny、
   それ以外の失敗(不通/HTTPタイムアウト/5xx/非JSON)は "ask"(手動承認)にフォールバックし、
   **決して auto-allow に素通りさせない**（承認ゲートが過負荷時に消えないようにする）。
 - PreToolUse 以外のライフサイクルイベント: POST /api/event
@@ -26,6 +26,7 @@ TOKEN = os.environ.get("APPROVAL_BRIDGE_TOKEN", "")
 LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "claudecode.log")
 LOG_MAX = 512 * 1024  # 超過でローテーション(先頭を破棄)
 DECISION_TIMEOUT = 240
+DEFAULT_GATED_TOOLS = ("Bash", "Edit", "Write", "MultiEdit", "NotebookEdit")
 
 # loopback 宛のトークン/cwd/tool_input を環境変数の外部 proxy へ流さない。
 opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -72,6 +73,22 @@ def cmux_env() -> dict:
         "cmux_tab_id": os.environ.get("CMUX_TAB_ID"),
         "is_cmux": bool(os.environ.get("CMUX_BUNDLE_ID")),
     }
+
+
+def is_gated_tool(tool_name) -> bool:
+    """環境変数の完全一致・末尾 * のプレフィックス一致で承認対象を判定。"""
+    configured = os.environ.get("CLAUDEMICRO_GATED_TOOLS", "")
+    gated_tools = tuple(entry.strip() for entry in configured.split(",") if entry.strip())
+    if not gated_tools:
+        gated_tools = DEFAULT_GATED_TOOLS
+    if not isinstance(tool_name, str):
+        return False
+    return any(
+        entry == "*"
+        or (entry.endswith("*") and tool_name.startswith(entry[:-1]))
+        or tool_name == entry
+        for entry in gated_tools
+    )
 
 
 def handle_decision(data: dict) -> int:
@@ -145,6 +162,8 @@ def main() -> int:
         return 0
     event = data.get("hook_event_name") or "PreToolUse"
     if event == "PreToolUse":
+        if not is_gated_tool(data.get("tool_name")):
+            return 0
         return handle_decision(data)
     return handle_event(event, data)
 

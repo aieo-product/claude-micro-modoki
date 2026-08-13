@@ -82,6 +82,16 @@ python3 -m venv .venv
 `examples/settings.local.json` を参考に、PreToolUse hook で `hook_client.py` を呼ぶよう設定する
 （`~/.claude/settings.json` 等。パスは各自の配置に合わせる）。
 
+### 承認対象ツールの指定
+
+`CLAUDEMICRO_GATED_TOOLS` で承認対象をカンマ区切りで上書きできる。未設定または空の場合は
+`Bash,Edit,Write,MultiEdit,NotebookEdit` が既定値。末尾の `*` は前方一致（例: `mcp__*`）、
+単独の `*` はすべてのツールを承認対象にする。
+
+```bash
+export CLAUDEMICRO_GATED_TOOLS='Bash,mcp__*'
+```
+
 ## トラブルシュート
 - コンソールで「未接続」: 有線モード（白）か / USB 接続 / 手順2の入力監視を確認
 - キーを押しても無反応: 承認要求が無い、またはキー割当（binding）未設定。設定コンソールで割当
