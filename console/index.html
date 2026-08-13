@@ -400,7 +400,7 @@ const PAD_CELLS = [
   {pos:"p07", type:"key"}, {pos:"p08", type:"key"}, {pos:"p09", type:"key"}, {pos:"p10", type:"key"},
   {pos:"led", type:"stick"}, {pos:"p11", type:"wide"}, {pos:"p12", type:"key"},
 ];
-const SCOPE_LABEL = {common:"共通", claude:"claude専用", codex:"codex専用"};
+const SCOPE_LABEL = {common:"共通", control:"コントロール", claude:"claude専用", codex:"codex専用"};
 
 let config = null;
 let catalog = {actions:[], modes:[], icon_choices:[]};
@@ -515,7 +515,7 @@ function renderPad() {
 function renderActionGrid() {
   const wrap = $("m-action-grid");
   wrap.innerHTML = "";
-  for (const scope of ["common", "claude", "codex"]) {
+  for (const scope of ["common", "control", "claude", "codex"]) {
     const actions = catalog.actions.filter(x => x.scope === scope);
     if (!actions.length) continue;
     const label = document.createElement("div");
