@@ -53,6 +53,20 @@ KEYSTROKE_MAP = {
 # (codex CLI に同名コマンドが無いと誤入力になるため, #43 レビュー指摘)。
 CLAUDE_ONLY_KEYSTROKES = {"compact", "resume", "new-session", "plan-mode", "accept-edits"}
 
+# codex-app(公式 Codex/ChatGPT アプリ)向けのショートカット (#42)。
+# 実機のメニューバー(AXMenuItemCmdChar/CmdModifiers)から採取した実在の割当のみ。
+# modifiers は _send_keystroke の AppleScript 構文に合わせる (command は常に付く)。
+CODEX_APP_KEYSTROKE_MAP = {
+    "new-session":   {"text_key": "n", "modifiers": ["command"]},              # 新しいチャット ⌘N
+    "sidebar-toggle": {"text_key": "b", "modifiers": ["command"]},             # サイドバーを切り替える ⌘B
+    "focus-term":    {"text_key": "@", "modifiers": ["control", "option"]},    # ターミナルを開く ⌃⌥@
+    "diff":          {"text_key": "b", "modifiers": ["command", "option"]},    # レビューパネル ⌘⌥B
+    "prev-session":  {"text_key": "[", "modifiers": ["command", "shift"]},     # 前のチャット ⌘⇧[
+    "next-session":  {"text_key": "]", "modifiers": ["command", "shift"]},     # 次のチャット ⌘⇧]
+    "back":          {"text_key": "[", "modifiers": ["command"]},              # 前へ ⌘[
+    "forward":       {"text_key": "]", "modifiers": ["command"]},              # 進む ⌘]
+}
+
 AGENT_KEY_COUNT = 6
 SESSION_INFO_LIMIT = 32
 OBSERVED_INPUT_SESSION_LIMIT = 32
@@ -468,7 +482,15 @@ class Bridge:
         入力監視でなく Accessibility 権限が必要。値はハードコードの KEYSTROKE_MAP 由来。"""
         if sys.platform != "darwin":
             return  # TODO(win32): SendInput 等
-        if "text" in spec:
+        if "text_key" in spec:  # 修飾キー付きの文字ショートカット (⌘N 等, #42)
+            ch = str(spec["text_key"]).replace("\\", "\\\\").replace('"', '\\"')
+            mods = spec.get("modifiers") or []
+            using = ""
+            if mods:
+                using = " using {" + ", ".join(f"{m} down" for m in mods) + "}"
+            await self._run("osascript", "-e",
+                            f'tell application "System Events" to keystroke "{ch}"{using}')
+        elif "text" in spec:
             text = str(spec["text"]).replace("\\", "\\\\").replace('"', '\\"')
             await self._run("osascript", "-e",
                             f'tell application "System Events" to keystroke "{text}"')
@@ -489,8 +511,14 @@ class Bridge:
         ctx = actions_mod.mode_context(self.mode)
         fam = actions_mod.mode_family(self.mode)
         if fam == "codex" and ctx == "app":
-            # TODO(#5b): 公式 Codex アプリへ AppleScript で委譲
-            print(f"[action] {action_id} -> codex-app 委譲は未対応", flush=True)
+            # 公式 Codex(ChatGPT) アプリへショートカットで委譲 (#42)。実機メニューから採取した割当のみ。
+            spec = CODEX_APP_KEYSTROKE_MAP.get(action_id)
+            if spec is None:
+                print(f"[action] {action_id} -> codex-app 未対応 (ショートカット未確認)", flush=True)
+                return
+            if self.loop:
+                self.loop.create_task(self._send_keystroke(spec))
+            print(f"[action] {action_id} -> codex-app ショートカット送出", flush=True)
             return
         if fam != "claude" and action_id in CLAUDE_ONLY_KEYSTROKES:
             # Claude Code 固有のコマンド/キーは codex 端末へ送らない (#43 レビュー指摘)

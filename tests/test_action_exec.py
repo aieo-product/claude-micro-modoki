@@ -153,3 +153,63 @@ class ClaudeOnlyGuardTests(unittest.TestCase):
         b._exec_action("interrupt")   # 汎用キーは送出される
         b._exec_action("scroll-down")
         self.assertEqual(len(scheduled), 2)
+
+
+class CodexAppExecTests(unittest.TestCase):
+    """#42: codex-app への公式アプリショートカット委譲。"""
+
+    def _bridge(self, mode="codex-app"):
+        b = main_mod.Bridge.__new__(main_mod.Bridge)
+        b.mode = mode
+        scheduled = []
+
+        class _Loop:
+            def create_task(self, coro):
+                scheduled.append(coro)
+                coro.close()
+
+        b.loop = _Loop()
+        return b, scheduled
+
+    def test_mapped_codex_app_action_sends(self):
+        b, scheduled = self._bridge()
+        b._exec_action("new-session")      # ⌘N 新しいチャット
+        b._exec_action("sidebar-toggle")   # ⌘B
+        self.assertEqual(len(scheduled), 2)
+
+    def test_unmapped_codex_app_action_no_send(self):
+        b, scheduled = self._bridge()
+        b._exec_action("fork")             # ショートカット未確認
+        self.assertEqual(scheduled, [])
+
+    def test_codex_app_map_targets_exist(self):
+        from server import actions
+        for aid in main_mod.CODEX_APP_KEYSTROKE_MAP:
+            self.assertIn(aid, actions.ACTION_IDS, aid)
+
+    def test_codex_app_specs_wellformed(self):
+        for aid, spec in main_mod.CODEX_APP_KEYSTROKE_MAP.items():
+            self.assertIn("text_key", spec, aid)
+            self.assertTrue(spec.get("modifiers"), aid)
+            for mod in spec["modifiers"]:
+                self.assertIn(mod, ("command", "shift", "option", "control"), aid)
+
+
+class TextKeyScriptTests(unittest.TestCase):
+    """text_key(修飾付き文字ショートカット) のスクリプト生成。"""
+
+    def test_script_has_keystroke_and_modifiers(self):
+        b = main_mod.Bridge.__new__(main_mod.Bridge)
+        calls = []
+
+        async def fake_run(*argv):
+            calls.append(argv)
+
+        b._run = fake_run
+        orig = main_mod.sys.platform
+        main_mod.sys.platform = "darwin"
+        try:
+            asyncio.run(b._send_keystroke({"text_key": "n", "modifiers": ["command"]}))
+        finally:
+            main_mod.sys.platform = orig
+        self.assertIn('keystroke "n" using {command down}', calls[0][2])
