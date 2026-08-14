@@ -119,3 +119,37 @@ class KeystrokeMapExpansionTests(unittest.TestCase):
                 self.assertIsInstance(spec["key_code"], int, aid)
             for mod in spec.get("modifiers", []):
                 self.assertIn(mod, ("shift", "command", "option", "control"), aid)
+
+
+class ClaudeOnlyGuardTests(unittest.TestCase):
+    """#43 レビュー指摘: claude 固有コマンドを codex 端末へ送らない。"""
+
+    def _bridge(self, mode):
+        b = main_mod.Bridge.__new__(main_mod.Bridge)
+        b.mode = mode
+        scheduled = []
+
+        class _Loop:
+            def create_task(self, coro):
+                scheduled.append(coro)
+                coro.close()
+
+        b.loop = _Loop()
+        return b, scheduled
+
+    def test_claude_only_not_sent_to_codex_terminal(self):
+        b, scheduled = self._bridge("cmux-codex")
+        for aid in main_mod.CLAUDE_ONLY_KEYSTROKES:
+            b._exec_action(aid)
+        self.assertEqual(scheduled, [])
+
+    def test_claude_only_sent_on_claude_terminal(self):
+        b, scheduled = self._bridge("cmux-claude")
+        b._exec_action("new-session")
+        self.assertEqual(len(scheduled), 1)
+
+    def test_generic_actions_still_sent_to_codex_terminal(self):
+        b, scheduled = self._bridge("cmux-codex")
+        b._exec_action("interrupt")   # 汎用キーは送出される
+        b._exec_action("scroll-down")
+        self.assertEqual(len(scheduled), 2)
