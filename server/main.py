@@ -50,6 +50,25 @@ KEYSTROKE_MAP = {
     "input-nav":    {"key_code": 126},                         # ↑ (入力欄内の移動/履歴)
 }
 
+# codex CLI(cmux-codex) 向けキーストローク (#57 の実機調査に基づく, codex-cli 0.147.0)。
+# 出典: Codex CLI TUI のキーバインド/スラッシュコマンド調査(confirmed のみ採用、unknown は非マップ)。
+CODEX_CLI_KEYSTROKE_MAP = {
+    "plan-mode":        {"key_code": 48, "modifiers": ["shift"]},   # Shift+Tab: Default/Plan 循環
+    "inference-effort": {"key_code": 47, "modifiers": ["option"]},  # Option+. : エフォート上げ
+    "interrupt":        {"key_code": 53},                           # Esc: 実行中turnの中断
+    "compact":          {"text": "/compact", "enter": True},
+    "new-session":      {"text": "/new", "enter": True},
+    "resume":           {"text": "/resume", "enter": True},
+    "diff":             {"text": "/diff", "enter": True},
+    "fast-codex":       {"text": "/fast", "enter": True},
+    "side-chat":        {"text": "/side", "enter": True},
+    "archive":          {"text": "/archive", "enter": True},
+    "fork":             {"text": "/fork", "enter": True},
+    "accept-edits":     {"text": "/permissions", "enter": True},    # 承認モード切替
+    "back":             {"key_code": 123},                          # 入力欄内の移動(←)
+    "forward":          {"key_code": 124},                          # 入力欄内の移動(→)
+}
+
 # Claude Code 固有のスラッシュコマンド/キー。scope=common でも codex 端末へは送らない
 # (codex CLI に同名コマンドが無いと誤入力になるため, #43 レビュー指摘)。
 CLAUDE_ONLY_KEYSTROKES = {"compact", "resume", "new-session", "plan-mode", "accept-edits"}
@@ -532,6 +551,9 @@ class Bridge:
             return
         # ユーザーが明示指定した端末向けショートカットを最優先 (#55)。
         spec = ((getattr(self, "cfg", None) or {}).get("terminal_shortcuts") or {}).get(action_id)
+        if spec is None and fam == "codex":
+            # codex CLI は専用マップを優先 (#57 調査で確認済みの割当)
+            spec = CODEX_CLI_KEYSTROKE_MAP.get(action_id)
         if spec is None:
             if fam != "claude" and action_id in CLAUDE_ONLY_KEYSTROKES:
                 # Claude Code 固有のコマンド/キーは codex 端末へ送らない (#43)。

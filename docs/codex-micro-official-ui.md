@@ -125,7 +125,7 @@ commandId = "composer.togglePlanMode"   # 十字: 公式 commandId
 |---|---|
 | claude 系（claude-app / cmux-claude） | `KEYSTROKE_MAP`（例: プランモード = Shift+Tab） |
 | codex-app | `CODEX_APP_KEYSTROKE_MAP` + **`config.codex_app_shortcuts`（ユーザー上書き）** |
-| cmux-codex（codex CLI） | `config.terminal_shortcuts`（ユーザー上書き）> 既定は Claude 固有コマンドを送らない（`CLAUDE_ONLY_KEYSTROKES`） |
+| cmux-codex（codex CLI） | `config.terminal_shortcuts`（上書き）> **`CODEX_CLI_KEYSTROKE_MAP`**（#57 の調査で確認済み）> Claude 固有コマンドは送らない |
 
 ### 公式側で既定未割り当ての機能を使う
 プランモード切替・高速モード・推論負荷・git/PR などは公式アプリの既定ショートカットが無い。
@@ -146,6 +146,23 @@ commandId = "composer.togglePlanMode"   # 十字: 公式 commandId
 
 未登録のまま実行すると、ログに「codex-app 未割当: 公式アプリの設定 > キーボードショートカットで
 割り当て、設定の codex_app_shortcuts に登録してください」と表示される。
+
+## codex CLI のキーバインド（実機調査, codex-cli 0.147.0 / issue #57）
+
+TUI の実装・公式ソース・ドキュメントを突き合わせた調査結果より、**confirmed のもののみ**採用:
+
+| アクション | codex CLI |
+|---|---|
+| プランモード切替 | **Shift+Tab**（Default/Plan の循環。直接入るなら `/plan`） |
+| 推論エフォート | **Option+.** で上げ / **Option+,** で下げ（別名 Shift+↑/↓） |
+| 実行中の中断 | **Esc** |
+| コンパクト / 新規 / 再開 | `/compact` / `/new` / `/resume` |
+| 差分 / 高速モード / サイド会話 | `/diff` / `/fast` / `/side` |
+| アーカイブ / フォーク / 承認モード | `/archive` / `/fork` / `/permissions` |
+
+> 補足: Shift+Tab は**モデル選択ではなく Plan モード循環**。モデル選択は `/model`。
+> 会話スクロールは `Ctrl+T`（トランスクリプト）を開いてから pager キー、という2段操作のため未対応。
+> git / PR / ブランチ作成 / 前後セッション切替は専用コマンドが無く（unknown）、誤送出回避のため非マップ。
 
 ## 本プロジェクトへの反映
 

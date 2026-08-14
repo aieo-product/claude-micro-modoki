@@ -134,11 +134,21 @@ class ClaudeOnlyGuardTests(unittest.TestCase):
         b.loop = _Loop()
         return b, scheduled
 
-    def test_claude_only_not_sent_to_codex_terminal(self):
+    def test_claude_only_without_codex_equivalent_not_sent(self):
+        """codex CLI に確認済みの代替が無い claude 固有コマンドは送出しない。"""
         b, scheduled = self._bridge("cmux-codex")
-        for aid in main_mod.CLAUDE_ONLY_KEYSTROKES:
+        targets = [a for a in main_mod.CLAUDE_ONLY_KEYSTROKES
+                   if a not in main_mod.CODEX_CLI_KEYSTROKE_MAP]
+        for aid in targets:
             b._exec_action(aid)
         self.assertEqual(scheduled, [])
+
+    def test_claude_only_with_codex_equivalent_uses_codex_spec(self):
+        """代替が判明しているものは codex CLI 用の割当で送出する (#57)。"""
+        b, scheduled = self._bridge("cmux-codex")
+        b._exec_action("compact")     # codex では /compact
+        b._exec_action("plan-mode")   # codex では Shift+Tab
+        self.assertEqual(len(scheduled), 2)
 
     def test_claude_only_sent_on_claude_terminal(self):
         b, scheduled = self._bridge("cmux-claude")
@@ -299,6 +309,28 @@ class CrossModeActionTests(unittest.TestCase):
         overrides = b.cfg["codex_app_shortcuts"]
         self.assertEqual(overrides["sidebar-toggle"]["text_key"], "z")
         self.assertEqual(main_mod.CODEX_APP_KEYSTROKE_MAP["sidebar-toggle"]["text_key"], "b")
+
+
+class CodexCliMapTests(unittest.TestCase):
+    """#57: codex CLI 調査結果に基づくマップ (codex-cli 0.147.0)。"""
+
+    def test_confirmed_bindings(self):
+        m = main_mod.CODEX_CLI_KEYSTROKE_MAP
+        self.assertEqual(m["plan-mode"], {"key_code": 48, "modifiers": ["shift"]})
+        self.assertEqual(m["inference-effort"], {"key_code": 47, "modifiers": ["option"]})
+        self.assertEqual(m["interrupt"], {"key_code": 53})
+        self.assertEqual(m["compact"]["text"], "/compact")
+        self.assertTrue(m["compact"]["enter"])
+
+    def test_unknown_actions_not_mapped(self):
+        """調査で unknown だったものは誤送出を避けるため非マップ。"""
+        for aid in ("git", "pr", "branch", "next-session", "prev-session"):
+            self.assertNotIn(aid, main_mod.CODEX_CLI_KEYSTROKE_MAP, aid)
+
+    def test_all_targets_exist_in_catalog(self):
+        from server import actions
+        for aid in main_mod.CODEX_CLI_KEYSTROKE_MAP:
+            self.assertIn(aid, actions.ACTION_IDS, aid)
 
 if __name__ == "__main__":
     unittest.main()
