@@ -42,7 +42,11 @@ KEYSTROKE_MAP = {
     "back":         {"key_code": 123},                         # ←
     "forward":      {"key_code": 124},                         # →
     "plan-mode":    {"key_code": 48, "modifiers": ["shift"]},  # Shift+Tab (Claude Code モード循環)
+    "accept-edits": {"key_code": 48, "modifiers": ["shift"]},  # 同上(モード循環で編集自動承認へ)
     "compact":      {"text": "/compact", "enter": True},       # スラッシュコマンド
+    "resume":       {"text": "/resume", "enter": True},        # セッション再開
+    "new-session":  {"text": "/clear", "enter": True},         # 履歴クリア=新規セッション相当
+    "input-nav":    {"key_code": 126},                         # ↑ (入力欄内の移動/履歴)
 }
 
 AGENT_KEY_COUNT = 6

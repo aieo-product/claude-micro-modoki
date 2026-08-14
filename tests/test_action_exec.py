@@ -97,3 +97,25 @@ class ExecActionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class KeystrokeMapExpansionTests(unittest.TestCase):
+    """#43: 追加マップの妥当性。"""
+
+    def test_added_actions_mapped(self):
+        for aid in ("accept-edits", "resume", "new-session", "input-nav"):
+            self.assertIn(aid, main_mod.KEYSTROKE_MAP, aid)
+
+    def test_slash_commands_send_enter(self):
+        for aid in ("compact", "resume", "new-session"):
+            spec = main_mod.KEYSTROKE_MAP[aid]
+            self.assertTrue(spec.get("text", "").startswith("/"), aid)
+            self.assertTrue(spec.get("enter"), aid)
+
+    def test_specs_are_wellformed(self):
+        for aid, spec in main_mod.KEYSTROKE_MAP.items():
+            self.assertTrue("text" in spec or "key_code" in spec, aid)
+            if "key_code" in spec:
+                self.assertIsInstance(spec["key_code"], int, aid)
+            for mod in spec.get("modifiers", []):
+                self.assertIn(mod, ("shift", "command", "option", "control"), aid)
