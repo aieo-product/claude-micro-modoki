@@ -52,6 +52,68 @@
 未記載のアクション（fork / git / pr / archive / pin 等）は**メニューにショートカットが見つからなかった**もの。
 実装するにはメニュー項目クリック（AXPress）等が必要で、現状は送出しない（誤操作回避）。
 
+
+## 公式アプリのキーボードショートカット設定（実機採取, #51）
+
+> 採取環境: **ChatGPT.app 26.803.81509**（既定値はアプリ更新で変わりうる）
+
+ChatGPT.app の **設定 → キーボードショートカット** は全アクションにキーを割当できる一覧。
+既定で割当済みのものは**セットアップ不要**で送出できる（`CODEX_APP_KEYSTROKE_MAP`）。
+
+| アクション | 既定 | 本アプリ |
+|---|---|---|
+| 新しいチャット | ⌘N | `new-session` |
+| 一時チャット | ⇧⌘N | `temp-chat` |
+| チャットをアーカイブ | ⇧⌘A | `archive` |
+| サイドチャットを開く | ⌥⌘S | `side-chat` |
+| ピン留めを切り替え | ⌥⌘P | `pin` |
+| Codex に切り替え | ⌃3 | `codex-focus` |
+| サイドバーを切り替える | ⌘B | `sidebar-toggle` |
+| ターミナルを開く | ⌃@（JIS 表示 `^\``） | `focus-term` |
+| レビューパネルの表示を切り替え | ⌥⌘B | `diff` |
+| 前/次のチャット | ⇧⌘[ / ⇧⌘] | `prev-session` / `next-session` |
+| 前へ / 進む | ⌘[ / ⌘] | `back` / `forward` |
+| リクエストを承認 / 拒否 | ⏎ / Escape | （承認は bridge 側で解決するため未使用） |
+
+### 既定が「未割り当て」のもの（ユーザー割当が必要）
+コミットまたはプッシュ / ブランチを作成 / ドラフト PR を作成 / PR を作成 / PR をマージ /
+GitHub で PR を開く / 高速モードを切り替え / プランモードの切り替え / 推論の負荷（切替・上げ・下げ）/
+新しいウィンドウで開く 等。
+
+> **★アプリのショートカット割当をローカルに書き込む手段は見つかっていない**。実測（ChatGPT.app 26.803.81509）
+> では、UI で割当を変更しても `com.openai.chat.plist` / `com.openai.codex.plist` / `~/.codex/config.toml` の
+> いずれにも反映されなかった（アカウント同期の可能性が高いが未確定）。したがって**現時点でスクリプトによる
+> 一括設定は行えない**ため、各自がアプリ内で割り当て、本アプリの `CODEX_APP_KEYSTROKE_MAP` に追記して送出する。
+> 将来ローカル設定手段が判明した場合はこの記述を更新すること。
+
+## 公式デバイス設定のスキーマ（`~/.codex/config.toml`）
+
+公式アプリの Codex Micro 設定は **TOML でローカル保存**されており、機械可読:
+
+```toml
+[desktop]
+codex-micro-lighting-brightness = 100
+codex-micro-single-tap-agent-keys = false
+codex-micro-agent-source = "pinned"
+
+[desktop.codex-micro-layout]
+version = 1
+encoderMode = "reasoning"        # ノブ
+voiceButtonMode = "push-to-talk" # マイクキー
+separateMicrophoneKeys = false
+
+[desktop.codex-micro-layout.slots.ACT07]
+keycapId = "APPR"                # キーキャップ表示
+
+[desktop.codex-micro-layout.analogStick.up]
+type = "command"
+commandId = "composer.togglePlanMode"   # 十字: 公式 commandId
+# right=navigateForward / down=toggleSidebar / left=navigateBack
+```
+
+本アプリの `analog_stick` / `knob` / `mic_key` 既定は上記公式既定と一致している。
+将来的にこの TOML を読み取れば、公式アプリで設定済みのユーザーは**追加設定ゼロ**で本アプリに反映できる。
+
 ## 本プロジェクトへの反映
 
 - `console/index.html` で 接続カード / レイアウト図クリック割り当て / オプション の 3 構成を踏襲
