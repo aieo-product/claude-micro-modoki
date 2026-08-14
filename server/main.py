@@ -42,8 +42,16 @@ KEYSTROKE_MAP = {
     "back":         {"key_code": 123},                         # ←
     "forward":      {"key_code": 124},                         # →
     "plan-mode":    {"key_code": 48, "modifiers": ["shift"]},  # Shift+Tab (Claude Code モード循環)
+    "accept-edits": {"key_code": 48, "modifiers": ["shift"]},  # 同上(モード循環で編集自動承認へ)
     "compact":      {"text": "/compact", "enter": True},       # スラッシュコマンド
+    "resume":       {"text": "/resume", "enter": True},        # セッション再開
+    "new-session":  {"text": "/clear", "enter": True},         # 履歴クリア=新規セッション相当
+    "input-nav":    {"key_code": 126},                         # ↑ (入力欄内の移動/履歴)
 }
+
+# Claude Code 固有のスラッシュコマンド/キー。scope=common でも codex 端末へは送らない
+# (codex CLI に同名コマンドが無いと誤入力になるため, #43 レビュー指摘)。
+CLAUDE_ONLY_KEYSTROKES = {"compact", "resume", "new-session", "plan-mode", "accept-edits"}
 
 AGENT_KEY_COUNT = 6
 SESSION_INFO_LIMIT = 32
@@ -483,6 +491,10 @@ class Bridge:
         if fam == "codex" and ctx == "app":
             # TODO(#5b): 公式 Codex アプリへ AppleScript で委譲
             print(f"[action] {action_id} -> codex-app 委譲は未対応", flush=True)
+            return
+        if fam != "claude" and action_id in CLAUDE_ONLY_KEYSTROKES:
+            # Claude Code 固有のコマンド/キーは codex 端末へ送らない (#43 レビュー指摘)
+            print(f"[action] {action_id} -> claude 端末専用のため送出しない ({self.mode})", flush=True)
             return
         spec = KEYSTROKE_MAP.get(action_id)
         if spec is None:

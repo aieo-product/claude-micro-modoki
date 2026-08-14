@@ -97,3 +97,59 @@ class ExecActionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class KeystrokeMapExpansionTests(unittest.TestCase):
+    """#43: 追加マップの妥当性。"""
+
+    def test_added_actions_mapped(self):
+        for aid in ("accept-edits", "resume", "new-session", "input-nav"):
+            self.assertIn(aid, main_mod.KEYSTROKE_MAP, aid)
+
+    def test_slash_commands_send_enter(self):
+        for aid in ("compact", "resume", "new-session"):
+            spec = main_mod.KEYSTROKE_MAP[aid]
+            self.assertTrue(spec.get("text", "").startswith("/"), aid)
+            self.assertTrue(spec.get("enter"), aid)
+
+    def test_specs_are_wellformed(self):
+        for aid, spec in main_mod.KEYSTROKE_MAP.items():
+            self.assertTrue("text" in spec or "key_code" in spec, aid)
+            if "key_code" in spec:
+                self.assertIsInstance(spec["key_code"], int, aid)
+            for mod in spec.get("modifiers", []):
+                self.assertIn(mod, ("shift", "command", "option", "control"), aid)
+
+
+class ClaudeOnlyGuardTests(unittest.TestCase):
+    """#43 レビュー指摘: claude 固有コマンドを codex 端末へ送らない。"""
+
+    def _bridge(self, mode):
+        b = main_mod.Bridge.__new__(main_mod.Bridge)
+        b.mode = mode
+        scheduled = []
+
+        class _Loop:
+            def create_task(self, coro):
+                scheduled.append(coro)
+                coro.close()
+
+        b.loop = _Loop()
+        return b, scheduled
+
+    def test_claude_only_not_sent_to_codex_terminal(self):
+        b, scheduled = self._bridge("cmux-codex")
+        for aid in main_mod.CLAUDE_ONLY_KEYSTROKES:
+            b._exec_action(aid)
+        self.assertEqual(scheduled, [])
+
+    def test_claude_only_sent_on_claude_terminal(self):
+        b, scheduled = self._bridge("cmux-claude")
+        b._exec_action("new-session")
+        self.assertEqual(len(scheduled), 1)
+
+    def test_generic_actions_still_sent_to_codex_terminal(self):
+        b, scheduled = self._bridge("cmux-codex")
+        b._exec_action("interrupt")   # 汎用キーは送出される
+        b._exec_action("scroll-down")
+        self.assertEqual(len(scheduled), 2)
