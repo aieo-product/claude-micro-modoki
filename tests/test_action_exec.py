@@ -211,5 +211,23 @@ class TextKeyScriptTests(unittest.TestCase):
             main_mod.sys.platform = orig
         self.assertIn('keystroke "n" using {command down}', calls[0][2])
 
+
+class CodexAppMapCorrectnessTests(unittest.TestCase):
+    """#51: 実機採取に基づくマップの正しさ（回帰防止）。"""
+
+    def test_focus_term_is_control_only(self):
+        """メニューの mod=12 は ⌃ のみ(⌘なし)。⌥ を含めない (バグ回帰防止)。"""
+        spec = main_mod.CODEX_APP_KEYSTROKE_MAP["focus-term"]
+        self.assertEqual(spec["modifiers"], ["control"])
+
+    def test_default_assigned_actions_present(self):
+        for aid in ("temp-chat", "archive", "side-chat", "pin", "codex-focus"):
+            self.assertIn(aid, main_mod.CODEX_APP_KEYSTROKE_MAP, aid)
+
+    def test_no_unassigned_actions_mapped(self):
+        """既定が未割り当てのアクションは送出対象にしない(誤送出回避)。"""
+        for aid in ("git", "pr", "branch", "merge", "fast-codex", "new-window"):
+            self.assertNotIn(aid, main_mod.CODEX_APP_KEYSTROKE_MAP, aid)
+
 if __name__ == "__main__":
     unittest.main()

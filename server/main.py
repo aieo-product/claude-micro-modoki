@@ -58,11 +58,16 @@ CLAUDE_ONLY_KEYSTROKES = {"compact", "resume", "new-session", "plan-mode", "acce
 # modifiers は AppleScript の実キーに合わせて明示列挙する (メニュー表記の暗黙 ⌘ も含める)。
 CODEX_APP_KEYSTROKE_MAP = {
     "new-session":   {"text_key": "n", "modifiers": ["command"]},              # 新しいチャット ⌘N
+    "temp-chat":     {"text_key": "n", "modifiers": ["command", "shift"]},     # 一時チャット ⇧⌘N
+    "archive":       {"text_key": "a", "modifiers": ["command", "shift"]},     # チャットをアーカイブ ⇧⌘A
+    "side-chat":     {"text_key": "s", "modifiers": ["command", "option"]},    # サイドチャットを開く ⌥⌘S
+    "pin":           {"text_key": "p", "modifiers": ["command", "option"]},    # ピン留めを切り替え ⌥⌘P
+    "codex-focus":   {"text_key": "3", "modifiers": ["control"]},              # Codex に切り替え ⌃3
     "sidebar-toggle": {"text_key": "b", "modifiers": ["command"]},             # サイドバーを切り替える ⌘B
-    "focus-term":    {"text_key": "@", "modifiers": ["control", "option"]},    # ターミナルを開く ⌃⌥@
-    "diff":          {"text_key": "b", "modifiers": ["command", "option"]},    # レビューパネル ⌘⌥B
-    "prev-session":  {"text_key": "[", "modifiers": ["command", "shift"]},     # 前のチャット ⌘⇧[
-    "next-session":  {"text_key": "]", "modifiers": ["command", "shift"]},     # 次のチャット ⌘⇧]
+    "focus-term":    {"text_key": "@", "modifiers": ["control"]},              # ターミナルを開く ⌃@ (JIS表示 ^`)
+    "diff":          {"text_key": "b", "modifiers": ["command", "option"]},    # レビューパネル ⌥⌘B
+    "prev-session":  {"text_key": "[", "modifiers": ["command", "shift"]},     # 前のチャット ⇧⌘[
+    "next-session":  {"text_key": "]", "modifiers": ["command", "shift"]},     # 次のチャット ⇧⌘]
     "back":          {"text_key": "[", "modifiers": ["command"]},              # 前へ ⌘[
     "forward":       {"text_key": "]", "modifiers": ["command"]},              # 進む ⌘]
 }
