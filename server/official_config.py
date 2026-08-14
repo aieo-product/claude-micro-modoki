@@ -4,6 +4,8 @@
 **読み取り専用**: 公式 config は決して書き換えない。
 """
 
+from __future__ import annotations
+
 import os
 
 try:  # tomllib は Python 3.11+
@@ -88,7 +90,7 @@ def to_bridge_config(official: dict) -> tuple[dict, list[str]]:
     layout = desktop.get("codex-micro-layout") or {}
 
     brightness = desktop.get("codex-micro-lighting-brightness")
-    if isinstance(brightness, int):
+    if isinstance(brightness, int) and not isinstance(brightness, bool):
         out["brightness"] = max(0, min(100, brightness))
 
     single_tap = desktop.get("codex-micro-single-tap-agent-keys")
@@ -124,6 +126,9 @@ def to_bridge_config(official: dict) -> tuple[dict, list[str]]:
     stick: dict = {}
     for direction in STICK_DIRECTIONS:
         entry = stick_src.get(direction) or {}
+        if entry.get("type") not in (None, "command"):
+            notes.append(f"未対応の割当種別: {entry.get('type')} ({direction})")
+            continue
         command_id = entry.get("commandId")
         if not isinstance(command_id, str):
             continue

@@ -660,7 +660,7 @@ async def handle_import_official(request: web.Request):
     keys_patch, skipped = {}, []
     for key_id, action in slots.items():
         existing = bridge.cfg.get("keys", {}).get(key_id)
-        if existing and existing.get("role") == "action":
+        if existing and existing.get("role") == "action" and existing.get("pos"):
             icon = next((a["icon"] for a in actions_mod.ACTIONS if a["id"] == action), None)
             keys_patch[key_id] = {**existing, "action": action, "icon": icon}
         else:
