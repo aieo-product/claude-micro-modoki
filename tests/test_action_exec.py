@@ -220,12 +220,35 @@ class CodexAppMapCorrectnessTests(unittest.TestCase):
         spec = main_mod.CODEX_APP_KEYSTROKE_MAP["focus-term"]
         self.assertEqual(spec["modifiers"], ["control"])
 
-    def test_default_assigned_actions_present(self):
-        for aid in ("temp-chat", "archive", "side-chat", "pin", "codex-focus"):
-            self.assertIn(aid, main_mod.CODEX_APP_KEYSTROKE_MAP, aid)
+    # 採取元: ChatGPT.app 26.803.81509 の 設定 > キーボードショートカット 既定値。
+    # 期待値を表で固定し、キー/修飾キーの取り違えを検出する。
+    EXPECTED_CODEX_APP = {
+        "new-session":    ("n", ["command"]),                 # ⌘N
+        "temp-chat":      ("n", ["command", "shift"]),        # ⇧⌘N
+        "archive":        ("a", ["command", "shift"]),        # ⇧⌘A
+        "side-chat":      ("s", ["command", "option"]),       # ⌥⌘S
+        "pin":            ("p", ["command", "option"]),       # ⌥⌘P
+        "codex-focus":    ("3", ["control"]),                 # ⌃3
+        "sidebar-toggle": ("b", ["command"]),                 # ⌘B
+        "focus-term":     ("@", ["control"]),                 # ⌃@
+        "diff":           ("b", ["command", "option"]),       # ⌥⌘B
+        "prev-session":   ("[", ["command", "shift"]),        # ⇧⌘[
+        "next-session":   ("]", ["command", "shift"]),        # ⇧⌘]
+        "back":           ("[", ["command"]),                 # ⌘[
+        "forward":        ("]", ["command"]),                 # ⌘]
+    }
+
+    def test_exact_key_and_modifiers(self):
+        """全エントリのキー・修飾キーを期待値と突き合わせる (取り違え検出)。"""
+        self.assertEqual(set(main_mod.CODEX_APP_KEYSTROKE_MAP), set(self.EXPECTED_CODEX_APP))
+        for aid, (key, mods) in self.EXPECTED_CODEX_APP.items():
+            spec = main_mod.CODEX_APP_KEYSTROKE_MAP[aid]
+            self.assertEqual(spec["text_key"], key, aid)
+            self.assertEqual(sorted(spec["modifiers"]), sorted(mods), aid)
 
     def test_no_unassigned_actions_mapped(self):
-        """既定が未割り当てのアクションは送出対象にしない(誤送出回避)。"""
+        """既定が未割り当てのアクションは送出対象にしない(誤送出回避)。
+        採取元 ChatGPT.app 26.803.81509 基準。アプリ更新で既定が付いたら意図的に更新する。"""
         for aid in ("git", "pr", "branch", "merge", "fast-codex", "new-window"):
             self.assertNotIn(aid, main_mod.CODEX_APP_KEYSTROKE_MAP, aid)
 
