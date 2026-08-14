@@ -31,6 +31,20 @@ PORT = 35703
 CONSOLE_PATH = os.path.join(os.path.dirname(__file__), "..", "console", "index.html")
 TOKEN = os.environ.get("APPROVAL_BRIDGE_TOKEN", "")
 
+# アクション → キーストローク (claude系/cmux 端末向け, #5)。macOS key code。
+# 前面化済みの対象端末(agent 選択で focus 済)へ System Events で送出する。
+# 明確・安全なものだけを定義し、未定義アクションはログのみ(誤送出を避ける)。
+KEYSTROKE_MAP = {
+    "interrupt":    {"key_code": 53},                          # Esc
+    "scroll-up":    {"key_code": 116},                         # Page Up
+    "scroll-down":  {"key_code": 121},                         # Page Down
+    "scroll-convo": {"key_code": 121},                         # 会話スクロール = Page Down
+    "back":         {"key_code": 123},                         # ←
+    "forward":      {"key_code": 124},                         # →
+    "plan-mode":    {"key_code": 48, "modifiers": ["shift"]},  # Shift+Tab (Claude Code モード循環)
+    "compact":      {"text": "/compact", "enter": True},       # スラッシュコマンド
+}
+
 AGENT_KEY_COUNT = 6
 SESSION_INFO_LIMIT = 32
 OBSERVED_INPUT_SESSION_LIMIT = 32
@@ -441,19 +455,42 @@ class Bridge:
         # それ以外は実行先へディスパッチ (決定は本アプリ、実行のみ委譲)
         self._exec_action(action_id)
 
+    async def _send_keystroke(self, spec: dict):
+        """前面アプリへ System Events でキーストローク送出 (macOS, #5)。
+        入力監視でなく Accessibility 権限が必要。値はハードコードの KEYSTROKE_MAP 由来。"""
+        if sys.platform != "darwin":
+            return  # TODO(win32): SendInput 等
+        if "text" in spec:
+            text = str(spec["text"]).replace("\\", "\\\\").replace('"', '\\"')
+            await self._run("osascript", "-e",
+                            f'tell application "System Events" to keystroke "{text}"')
+            if spec.get("enter"):
+                await self._run("osascript", "-e",
+                                'tell application "System Events" to key code 36')
+        elif "key_code" in spec:
+            mods = spec.get("modifiers") or []
+            using = ""
+            if mods:
+                using = " using {" + ", ".join(f"{m} down" for m in mods) + "}"
+            await self._run("osascript", "-e",
+                            f'tell application "System Events" to key code {int(spec["key_code"])}{using}')
+
     def _exec_action(self, action_id):
-        """アクション実行のディスパッチ (実処理は #5 で順次実装)。"""
+        """アクション実行のディスパッチ (#5)。対象端末は agent 選択で前面化済み前提。
+        codex-app への委譲(AppleScript)は今後。未定義アクションは誤送出回避でログのみ。"""
         ctx = actions_mod.mode_context(self.mode)
         fam = actions_mod.mode_family(self.mode)
         if fam == "codex" and ctx == "app":
-            # TODO(#5): 公式 Codex アプリへ実行を委譲 (AppleScript/アプリ操作)。決定は本アプリ設定
-            print(f"[action] {action_id} -> codex-app へ委譲 (未実装)", flush=True)
-        elif ctx == "cmux":
-            # TODO(#5): 対象 cmux タブの CLI へキーストローク送出
-            print(f"[action] {action_id} -> cmux CLI 送出 (未実装)", flush=True)
-        else:
-            # TODO(#5): claude-app へキーストローク送出
-            print(f"[action] {action_id} -> claude-app 送出 (未実装)", flush=True)
+            # TODO(#5b): 公式 Codex アプリへ AppleScript で委譲
+            print(f"[action] {action_id} -> codex-app 委譲は未対応", flush=True)
+            return
+        spec = KEYSTROKE_MAP.get(action_id)
+        if spec is None:
+            print(f"[action] {action_id} -> キーストローク未定義 (今後追加)", flush=True)
+            return
+        if self.loop:
+            self.loop.create_task(self._send_keystroke(spec))
+        print(f"[action] {action_id} -> keystroke 送出 ({self.mode})", flush=True)
 
     def _resolve_selected_or_oldest(self, result: str):
         """選択中エージェントの保留を優先、なければ最古の保留を解決。"""
