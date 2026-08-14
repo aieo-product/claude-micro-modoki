@@ -86,7 +86,7 @@ class ExecActionTests(unittest.TestCase):
     def test_codex_app_no_send(self):
         b, scheduled = self._bridge(mode="codex-app")
         b._exec_action("interrupt")
-        self.assertEqual(scheduled, [])  # codex-app は委譲未対応でログのみ
+        self.assertEqual(scheduled, [])  # interrupt は codex-app マップ未定義のため送出しない
 
     def test_keystroke_map_targets_exist(self):
         """KEYSTROKE_MAP の全 id はアクションカタログに存在する。"""
@@ -94,9 +94,6 @@ class ExecActionTests(unittest.TestCase):
         for aid in main_mod.KEYSTROKE_MAP:
             self.assertIn(aid, actions.ACTION_IDS, aid)
 
-
-if __name__ == "__main__":
-    unittest.main()
 
 
 class KeystrokeMapExpansionTests(unittest.TestCase):
@@ -213,3 +210,6 @@ class TextKeyScriptTests(unittest.TestCase):
         finally:
             main_mod.sys.platform = orig
         self.assertIn('keystroke "n" using {command down}', calls[0][2])
+
+if __name__ == "__main__":
+    unittest.main()

@@ -55,7 +55,7 @@ CLAUDE_ONLY_KEYSTROKES = {"compact", "resume", "new-session", "plan-mode", "acce
 
 # codex-app(公式 Codex/ChatGPT アプリ)向けのショートカット (#42)。
 # 実機のメニューバー(AXMenuItemCmdChar/CmdModifiers)から採取した実在の割当のみ。
-# modifiers は _send_keystroke の AppleScript 構文に合わせる (command は常に付く)。
+# modifiers は AppleScript の実キーに合わせて明示列挙する (メニュー表記の暗黙 ⌘ も含める)。
 CODEX_APP_KEYSTROKE_MAP = {
     "new-session":   {"text_key": "n", "modifiers": ["command"]},              # 新しいチャット ⌘N
     "sidebar-toggle": {"text_key": "b", "modifiers": ["command"]},             # サイドバーを切り替える ⌘B
@@ -507,7 +507,7 @@ class Bridge:
 
     def _exec_action(self, action_id):
         """アクション実行のディスパッチ (#5)。対象端末は agent 選択で前面化済み前提。
-        codex-app への委譲(AppleScript)は今後。未定義アクションは誤送出回避でログのみ。"""
+        codex-app は公式アプリのショートカットへ委譲。未定義アクションは誤送出回避でログのみ。"""
         ctx = actions_mod.mode_context(self.mode)
         fam = actions_mod.mode_family(self.mode)
         if fam == "codex" and ctx == "app":
