@@ -29,7 +29,11 @@ from .device import EFFECT, STATE_BRIGHTNESS, STATE_COLOR, HidAdapter
 
 HOST = "127.0.0.1"
 PORT = 35703
-CONSOLE_PATH = os.path.join(os.path.dirname(__file__), "..", "console", "index.html")
+CONSOLE_PATH = (
+    os.path.join(sys._MEIPASS, "console", "index.html")
+    if getattr(sys, "frozen", False)
+    else os.path.join(os.path.dirname(__file__), "..", "console", "index.html")
+)
 TOKEN = os.environ.get("APPROVAL_BRIDGE_TOKEN", "")
 
 # アクション → キーストローク (claude系/cmux 端末向け, #5)。macOS key code。
