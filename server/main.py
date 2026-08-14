@@ -24,6 +24,7 @@ from aiohttp import web
 
 from . import actions as actions_mod
 from . import config as config_mod
+from . import official_config as official_mod
 from .device import EFFECT, STATE_BRIGHTNESS, STATE_COLOR, HidAdapter
 
 HOST = "127.0.0.1"
@@ -642,6 +643,47 @@ async def handle_status(request: web.Request):
     })
 
 
+async def handle_import_official(request: web.Request):
+    """公式 Codex アプリのデバイス設定を取り込む (#53)。
+
+    GET  = プレビュー(適用しない) / POST = 適用。公式 config は読み取りのみ。
+    """
+    official = official_mod.load_official()
+    if official is None:
+        return web.json_response(
+            {"available": False,
+             "error": "公式設定 (~/.codex/config.toml) を読めませんでした"},
+            status=404)
+    patch, notes = official_mod.to_bridge_config(official)
+    # キー割当は物理位置(pos)が公式側に無いため、既存 binding のある key_id だけ更新する
+    slots = official_mod.slot_actions(official)
+    keys_patch, skipped = {}, []
+    for key_id, action in slots.items():
+        existing = bridge.cfg.get("keys", {}).get(key_id)
+        if existing and existing.get("role") == "action":
+            icon = next((a["icon"] for a in actions_mod.ACTIONS if a["id"] == action), None)
+            keys_patch[key_id] = {**existing, "action": action, "icon": icon}
+        else:
+            skipped.append(f"{key_id}={action}")
+    if skipped:
+        notes.append("キー割当スキップ(未学習/未割当のキー): " + ", ".join(sorted(skipped)))
+    if keys_patch:
+        patch["keys"] = {**bridge.cfg.get("keys", {}), **keys_patch}
+
+    if request.method == "GET":
+        return web.json_response({"available": True, "preview": patch, "notes": notes})
+
+    merged = {**bridge.cfg}
+    for key, value in patch.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = {**merged[key], **value}
+        else:
+            merged[key] = value
+    bridge.cfg = config_mod.save(merged)
+    bridge.adapter.update_timings(bridge.cfg["timings"])
+    return web.json_response({"available": True, "applied": patch, "notes": notes})
+
+
 async def handle_actions(request: web.Request):
     """アクションカタログとモード定義を返す (console のキー設定 UI 用, #5/#12)。"""
     return web.json_response({
@@ -944,6 +986,8 @@ def create_app() -> web.Application:
     app.router.add_post("/api/mode", handle_mode)
     app.router.add_post("/api/event", handle_event)
     app.router.add_get("/api/actions", handle_actions)
+    app.router.add_get("/api/import-official", handle_import_official)
+    app.router.add_post("/api/import-official", handle_import_official)
     app.router.add_get("/", handle_index)
     app.on_startup.append(on_startup)
     app.on_cleanup.append(on_cleanup)

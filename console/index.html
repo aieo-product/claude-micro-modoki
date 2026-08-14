@@ -298,6 +298,10 @@
 <h2>オプション</h2>
 <div class="card">
   <div class="row">
+    <div><div class="label">公式アプリの設定を取り込む</div><div class="desc">公式 Codex アプリで設定済みの Codex Micro レイアウト（ノブ／マイク／十字／明るさ）を読み込みます（読み取りのみ）</div></div>
+    <button type="button" id="import-official">取り込む</button>
+  </div>
+  <div class="row">
     <div><div class="label">エージェントキー</div><div class="desc">6 つのエージェントキーがフォローする対象を選択します</div></div>
     <select id="cfg-agentmode">
       <option value="recent">最近のセッション</option>
@@ -646,6 +650,18 @@ function renderOptions() {
 }
 
 $("cfg-brightness").oninput = e => $("brightness-val").textContent = e.target.value + "%";
+
+$("import-official").onclick = async () => {
+  try {
+    const r = await api("/api/import-official", {method: "POST", body: "{}"});
+    config = await api("/api/config");
+    renderPad(); renderOptions();
+    const notes = (r.notes || []).length ? "（注記: " + r.notes.join(" / ") + "）" : "";
+    toast("公式設定を取り込みました" + notes);
+  } catch (e) {
+    toast("取り込みに失敗: " + e.message);
+  }
+};
 
 $("cfg-knobmode").onchange = updateKnobCustomVisibility;
 
