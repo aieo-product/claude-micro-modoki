@@ -252,5 +252,53 @@ class CodexAppMapCorrectnessTests(unittest.TestCase):
         for aid in ("git", "pr", "branch", "merge", "fast-codex", "new-window"):
             self.assertNotIn(aid, main_mod.CODEX_APP_KEYSTROKE_MAP, aid)
 
+
+class CrossModeActionTests(unittest.TestCase):
+    """#55: 本家同様、同じ割当が claude/codex どちらでも動く。"""
+
+    def _bridge(self, mode, overrides=None):
+        b = main_mod.Bridge.__new__(main_mod.Bridge)
+        b.mode = mode
+        b.cfg = {"codex_app_shortcuts": overrides or {}}
+        scheduled = []
+
+        class _Loop:
+            def create_task(self, coro):
+                scheduled.append(coro)
+                coro.close()
+
+        b.loop = _Loop()
+        return b, scheduled
+
+    def test_plan_mode_is_not_family_gated(self):
+        """plan-mode は common scope になり codex モードでも弾かれない。"""
+        from server import actions
+        self.assertEqual(actions.action_scope("plan-mode"), "common")
+
+    def test_plan_mode_runs_on_claude_terminal(self):
+        b, scheduled = self._bridge("cmux-claude")
+        b._exec_action("plan-mode")
+        self.assertEqual(len(scheduled), 1)      # Shift+Tab を送出
+
+    def test_codex_app_user_override_enables_unassigned_action(self):
+        """公式側で割り当てたショートカットを config に登録すると送出できる。"""
+        override = {"plan-mode": {"text_key": "y", "modifiers": ["command", "option"]}}
+        b, scheduled = self._bridge("codex-app", override)
+        b._exec_action("plan-mode")
+        self.assertEqual(len(scheduled), 1)
+
+    def test_codex_app_without_override_does_not_send(self):
+        b, scheduled = self._bridge("codex-app")
+        b._exec_action("plan-mode")              # 既定マップに無い
+        self.assertEqual(scheduled, [])
+
+    def test_user_override_takes_precedence(self):
+        """既定マップより config の上書きを優先する。"""
+        override = {"sidebar-toggle": {"text_key": "z", "modifiers": ["command"]}}
+        b, _ = self._bridge("codex-app", override)
+        overrides = b.cfg["codex_app_shortcuts"]
+        self.assertEqual(overrides["sidebar-toggle"]["text_key"], "z")
+        self.assertEqual(main_mod.CODEX_APP_KEYSTROKE_MAP["sidebar-toggle"]["text_key"], "b")
+
 if __name__ == "__main__":
     unittest.main()

@@ -517,22 +517,32 @@ class Bridge:
         ctx = actions_mod.mode_context(self.mode)
         fam = actions_mod.mode_family(self.mode)
         if fam == "codex" and ctx == "app":
-            # 公式 Codex(ChatGPT) アプリへショートカットで委譲 (#42)。実機メニューから採取した割当のみ。
-            spec = CODEX_APP_KEYSTROKE_MAP.get(action_id)
+            # 公式 Codex(ChatGPT) アプリへショートカットで委譲 (#42)。既定は実機メニューから採取した
+            # 割当のみ。公式側で既定未割り当ての機能は config.codex_app_shortcuts で上書きできる (#55)。
+            overrides = (getattr(self, "cfg", None) or {}).get("codex_app_shortcuts") or {}
+            spec = overrides.get(action_id) or CODEX_APP_KEYSTROKE_MAP.get(action_id)
             if spec is None:
-                print(f"[action] {action_id} -> codex-app 未対応 (ショートカット未確認)", flush=True)
+                print(f"[action] {action_id} -> codex-app 未割当: 公式アプリの設定 > キーボード"
+                      f"ショートカットで割り当て、設定の codex_app_shortcuts に登録してください",
+                      flush=True)
                 return
             if self.loop:
                 self.loop.create_task(self._send_keystroke(spec))
             print(f"[action] {action_id} -> codex-app ショートカット送出", flush=True)
             return
-        if fam != "claude" and action_id in CLAUDE_ONLY_KEYSTROKES:
-            # Claude Code 固有のコマンド/キーは codex 端末へ送らない (#43 レビュー指摘)
-            print(f"[action] {action_id} -> claude 端末専用のため送出しない ({self.mode})", flush=True)
-            return
-        spec = KEYSTROKE_MAP.get(action_id)
+        # ユーザーが明示指定した端末向けショートカットを最優先 (#55)。
+        spec = ((getattr(self, "cfg", None) or {}).get("terminal_shortcuts") or {}).get(action_id)
         if spec is None:
-            print(f"[action] {action_id} -> キーストローク未定義 (今後追加)", flush=True)
+            if fam != "claude" and action_id in CLAUDE_ONLY_KEYSTROKES:
+                # Claude Code 固有のコマンド/キーは codex 端末へ送らない (#43)。
+                # 送りたい場合は config.terminal_shortcuts で明示指定する。
+                print(f"[action] {action_id} -> claude 端末専用のため送出しない ({self.mode})。"
+                      f"送出するには設定の terminal_shortcuts に登録してください", flush=True)
+                return
+            spec = KEYSTROKE_MAP.get(action_id)
+        if spec is None:
+            print(f"[action] {action_id} -> キーストローク未定義。設定の terminal_shortcuts に"
+                  f"登録すると送出できます", flush=True)
             return
         if self.loop:
             self.loop.create_task(self._send_keystroke(spec))

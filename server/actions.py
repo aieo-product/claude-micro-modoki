@@ -64,7 +64,7 @@ ACTIONS = [
     {"id": "scroll-convo",   "label": "会話スクロール",    "icon": "🖱️", "scope": "control"},
     {"id": "push-to-talk",   "label": "プッシュトゥトーク","icon": "🎙️", "scope": "control"},
     # claude 専用
-    {"id": "plan-mode",     "label": "プランモード切替",  "icon": "📋", "scope": "claude"},
+    {"id": "plan-mode",     "label": "プランモード切替",  "icon": "📋", "scope": "common"},
     {"id": "compact",       "label": "/compact",          "icon": "🗜️", "scope": "claude"},
     {"id": "accept-edits",  "label": "編集自動承認",      "icon": "✏️", "scope": "claude"},
     {"id": "resume",        "label": "セッション再開",    "icon": "↩️", "scope": "claude"},

@@ -114,6 +114,39 @@ commandId = "composer.togglePlanMode"   # 十字: 公式 commandId
 本アプリの `analog_stick` / `knob` / `mic_key` 既定は上記公式既定と一致している。
 将来的にこの TOML を読み取れば、公式アプリで設定済みのユーザーは**追加設定ゼロ**で本アプリに反映できる。
 
+
+## モード非依存のアクション実行（#55）
+
+本家のアナログスティック設定は family（claude/codex）の区別が無く、同じ割当がそのまま機能する。
+本アプリもこれに合わせ、両系統に存在する概念（例: プランモード切替）は `scope: common` とし、
+**モードで弾かず、実行手段をモードごとに選ぶ**:
+
+| モード | 実行手段 |
+|---|---|
+| claude 系（claude-app / cmux-claude） | `KEYSTROKE_MAP`（例: プランモード = Shift+Tab） |
+| codex-app | `CODEX_APP_KEYSTROKE_MAP` + **`config.codex_app_shortcuts`（ユーザー上書き）** |
+| cmux-codex（codex CLI） | `config.terminal_shortcuts`（ユーザー上書き）> 既定は Claude 固有コマンドを送らない（`CLAUDE_ONLY_KEYSTROKES`） |
+
+### 公式側で既定未割り当ての機能を使う
+プランモード切替・高速モード・推論負荷・git/PR などは公式アプリの既定ショートカットが無い。
+1. 公式アプリの **設定 > キーボードショートカット** で任意のキーを割り当てる
+2. 本アプリの設定 `codex_app_shortcuts` に登録する（**コード変更不要**）
+
+```json
+{ "codex_app_shortcuts": {
+    "plan-mode": { "text_key": "y", "modifiers": ["command", "option"] } } }
+```
+
+端末（cmux-codex 等）で Claude 固有ガードを越えて送りたい場合は `terminal_shortcuts` を使う:
+
+```json
+{ "terminal_shortcuts": {
+    "plan-mode": { "key_code": 48, "modifiers": ["shift"] } } }
+```
+
+未登録のまま実行すると、ログに「codex-app 未割当: 公式アプリの設定 > キーボードショートカットで
+割り当て、設定の codex_app_shortcuts に登録してください」と表示される。
+
 ## 本プロジェクトへの反映
 
 - `console/index.html` で 接続カード / レイアウト図クリック割り当て / オプション の 3 構成を踏襲

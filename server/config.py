@@ -36,6 +36,13 @@ DEFAULT_CONFIG = {
     "mic_key": {"mode": "push-to-talk", "separate_switches": False},
     # オプション (#34)
     "options": {"single_tap_focus": False},
+    # codex-app 用ショートカットのユーザー上書き (#55)。公式アプリ側で割り当てた
+    # キーをここに登録すると、コード変更なしに送出できる。
+    #   action id -> {"text_key": "p", "modifiers": ["command", "option"]}
+    "codex_app_shortcuts": {},
+    # 端末(claude系/cmux-codex)向けキーストロークのユーザー上書き (#55)。
+    # 明示指定があれば claude 固有ガードより優先する(ユーザーが意図した割当を尊重)。
+    "terminal_shortcuts": {},
     # hook_client 側タイムアウト(240s)より先に応答するためのブリッジ側タイムアウト
     "approval_timeout_sec": 230,
     # 物理キー割当: key_id ("k<reportID>:<code>") -> {pos, role, index, label}
