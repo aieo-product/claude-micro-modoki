@@ -6,6 +6,7 @@ Claude Code の承認操作とエージェント状態表示を **Codex Micro**�
 
 ## ドキュメント
 
+- 🌐 **ドキュメントサイト（設計書 + セットアップガイド）**: https://aieo-product.github.io/claude-micro-modoki/ （ソース: `website/`、main への push で自動デプロイ）
 - 🛠 **セットアップ手順**: [docs/setup.md](docs/setup.md)（有線モード / 入力監視 / **公式アプリ連携の切り方**）
 - 🔌 **vendor プロトコル**: [docs/vendor-protocol.md](docs/vendor-protocol.md)（Report ID 6 の JSON-RPC）
 - 🎛 **モード/アクション挙動**: [docs/mode-behavior.md](docs/mode-behavior.md)（4モード・codex パススルー）
