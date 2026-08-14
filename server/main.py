@@ -122,6 +122,16 @@ class Bridge:
             elif gesture == "long":
                 self.auto_mode = True  # 前面アプリ自動切替に復帰
             return
+        # ノブ(エンコーダ) / アナログスティック(十字) は物理キー割当ではなく専用設定に紐づく (#35)
+        if key_id in ("ENC_CW", "ENC_CC", "ENC_CLK"):
+            self._on_knob(key_id, gesture)
+            return
+        if key_id.startswith("STICK_"):
+            direction = key_id[len("STICK_"):].lower()
+            action = (self.cfg.get("analog_stick") or {}).get(direction)
+            if action:
+                self.run_action(action, gesture)
+            return
         # ★全モードで本アプリが頭脳: config 解釈・エージェント選択/表示・LED は本アプリが行う (issue #11)。
         #   codex-app でも本アプリの設定通りに動作させ、"アクションの実行だけ" 公式 Codex アプリへ委譲する
         #   （run_action / _exec_action 内でモード別にディスパッチ）。エージェント表示を統合するため
@@ -135,6 +145,33 @@ class Bridge:
             self.select_agent(binding.get("index"))
         elif role == "action":
             self.run_action(binding.get("action"), gesture)
+
+    def _on_knob(self, key_id: str, gesture: str):
+        """ノブ(エンコーダ)操作を config.knob に基づきアクションへディスパッチ (#35)。
+        mode: input-nav / inference / scroll(プリセット) / custom(回転/クリック/長押しを個別割当)。"""
+        knob = self.cfg.get("knob") or {}
+        mode = knob.get("mode", "scroll")
+        if key_id == "ENC_CLK":  # クリック / 長押し
+            if mode == "custom":
+                action = knob.get("long_press") if gesture == "long" else knob.get("click")
+            else:
+                action = "plan-mode" if gesture == "long" else "interrupt"
+            if action:
+                self.run_action(action, gesture)
+            return
+        cw = key_id == "ENC_CW"  # 右回転 / 左回転
+        if mode == "custom":
+            action = knob.get("rotate_cw") if cw else knob.get("rotate_ccw")
+        elif mode == "scroll":
+            action = "scroll-down" if cw else "scroll-up"
+        elif mode == "inference":
+            action = "inference-effort"
+        elif mode == "input-nav":
+            action = "input-nav"
+        else:
+            action = None
+        if action:
+            self.run_action(action, gesture)
 
     def _toggle_family(self):
         cur_ctx = actions_mod.mode_context(self.mode)
@@ -391,8 +428,9 @@ class Bridge:
         if scope is None:
             return
         family = actions_mod.mode_family(self.mode)
-        # scope がモードに合わない専用アクションは無視 (共通は常に可)
-        if scope != "common" and scope != family:
+        # scope がモードに合わない専用アクションは無視。common と control(ノブ/十字用の
+        # 汎用ナビゲーション, #35) は全モードで有効。
+        if scope not in ("common", "control") and scope != family:
             print(f"[action] {action_id} はモード({self.mode})対象外", flush=True)
             return
         # 承認系(共通)は本アプリが直接解決 (Claude Code hook 由来の保留要求)

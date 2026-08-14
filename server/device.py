@@ -95,6 +95,7 @@ class HidAdapter:
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._last_heartbeat = 0.0
         self._keys: dict[str, dict] = {}  # key_name -> ジェスチャー状態
+        self._stick_dir: str | None = None  # ジョイスティック: 現在アクティブな方向 (デバウンス用, #35)
 
     def start(self):
         self._thread.start()
@@ -256,12 +257,35 @@ class HidAdapter:
                 self._on_release(key, now)
             elif act == 2:  # エンコーダー回転など: 単発 tap 相当で通知
                 self.on_gesture(key, "tap")
+        elif method == "v.oai.rad":  # ジョイスティック(アナログ): {a:角度0..1, d:距離0..1} (#35)
+            p = obj.get("p", {})
+            self._handle_stick(p.get("a"), p.get("d"))
         elif method == "device.status":  # ハートビート応答: FW/バッテリー反映
             r = obj.get("result", {})
             if isinstance(r, dict):
                 self.status["fw"] = r.get("version", self.status.get("fw"))
                 self.status["battery"] = r.get("battery")
-        # v.oai.rad (ジョイスティック) は現状未使用
+
+    # ジョイスティックのヒステリシス閾値。d>ACTIVE で発火、d<RELEASE で再アーム。
+    _STICK_ACTIVE = 0.6
+    _STICK_RELEASE = 0.3
+    # 角度→方向 (実機実測: 右≈0.0 / 下≈0.25 / 左≈0.5 / 上≈0.75)
+    _STICK_DIRS = ("right", "down", "left", "up")
+
+    def _handle_stick(self, a, d):
+        """アナログ値を4方向に量子化し、1回の傾倒で1度だけ方向ジェスチャを発火。"""
+        if not isinstance(a, (int, float)) or not isinstance(d, (int, float)):
+            return
+        if d < self._STICK_RELEASE:
+            self._stick_dir = None  # 中央付近: 再アーム
+            return
+        if d < self._STICK_ACTIVE:
+            return  # 不感帯 (チャタリング抑制)
+        direction = self._STICK_DIRS[round(a * 4) % 4]
+        if direction == self._stick_dir:
+            return  # この傾倒では発火済み
+        self._stick_dir = direction
+        self.on_gesture("STICK_" + direction.upper(), "tap")
 
     def _on_press(self, key: str, t: float):
         self.on_raw_key(key)
