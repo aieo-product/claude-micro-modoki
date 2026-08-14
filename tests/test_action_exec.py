@@ -3,6 +3,10 @@
 import asyncio
 import unittest
 
+
+async def _noop():
+    return None
+
 from server import main as main_mod
 
 
@@ -134,11 +138,26 @@ class ClaudeOnlyGuardTests(unittest.TestCase):
         b.loop = _Loop()
         return b, scheduled
 
-    def test_claude_only_not_sent_to_codex_terminal(self):
+    def test_claude_only_without_codex_equivalent_not_sent(self):
+        """codex CLI に確認済みの代替が無い claude 固有コマンドは送出しない。"""
         b, scheduled = self._bridge("cmux-codex")
-        for aid in main_mod.CLAUDE_ONLY_KEYSTROKES:
+        targets = [a for a in main_mod.CLAUDE_ONLY_KEYSTROKES
+                   if a not in main_mod.CODEX_CLI_KEYSTROKE_MAP]
+        for aid in targets:
             b._exec_action(aid)
         self.assertEqual(scheduled, [])
+
+    def test_codex_equivalents_reachable_via_run_action(self):
+        """scope ゲート(run_action)を通って codex CLI 用の割当が実際に使われる (#57)。"""
+        b, _ = self._bridge("cmux-codex")
+        sent = []
+        b._send_keystroke = lambda spec: sent.append(spec) or _noop()
+        b._resolve_selected_or_oldest = lambda r: None
+        for aid in ("compact", "resume", "accept-edits", "plan-mode"):
+            b.run_action(aid, "tap")      # 本番経路
+        self.assertEqual(len(sent), 4, "scope ゲートで弾かれている")
+        self.assertEqual(sent[0]["text"], "/compact")
+        self.assertEqual(sent[2]["text"], "/permissions")
 
     def test_claude_only_sent_on_claude_terminal(self):
         b, scheduled = self._bridge("cmux-claude")
@@ -251,6 +270,119 @@ class CodexAppMapCorrectnessTests(unittest.TestCase):
         採取元 ChatGPT.app 26.803.81509 基準。アプリ更新で既定が付いたら意図的に更新する。"""
         for aid in ("git", "pr", "branch", "merge", "fast-codex", "new-window"):
             self.assertNotIn(aid, main_mod.CODEX_APP_KEYSTROKE_MAP, aid)
+
+
+class CrossModeActionTests(unittest.TestCase):
+    """#55: 本家同様、同じ割当が claude/codex どちらでも動く。"""
+
+    def _bridge(self, mode, overrides=None):
+        b = main_mod.Bridge.__new__(main_mod.Bridge)
+        b.mode = mode
+        b.cfg = {"codex_app_shortcuts": overrides or {}}
+        scheduled = []
+
+        class _Loop:
+            def create_task(self, coro):
+                scheduled.append(coro)
+                coro.close()
+
+        b.loop = _Loop()
+        return b, scheduled
+
+    def test_plan_mode_is_not_family_gated(self):
+        """plan-mode は common scope になり codex モードでも弾かれない。"""
+        from server import actions
+        self.assertEqual(actions.action_scope("plan-mode"), "common")
+
+    def test_plan_mode_runs_on_claude_terminal(self):
+        b, scheduled = self._bridge("cmux-claude")
+        b._exec_action("plan-mode")
+        self.assertEqual(len(scheduled), 1)      # Shift+Tab を送出
+
+    def test_codex_app_user_override_enables_unassigned_action(self):
+        """公式側で割り当てたショートカットを config に登録すると送出できる。"""
+        override = {"plan-mode": {"text_key": "y", "modifiers": ["command", "option"]}}
+        b, scheduled = self._bridge("codex-app", override)
+        b._exec_action("plan-mode")
+        self.assertEqual(len(scheduled), 1)
+
+    def test_codex_app_without_override_does_not_send(self):
+        b, scheduled = self._bridge("codex-app")
+        b._exec_action("plan-mode")              # 既定マップに無い
+        self.assertEqual(scheduled, [])
+
+    def test_user_override_takes_precedence(self):
+        """既定マップより config の上書きを優先する(実際に送出される spec を検証)。"""
+        override = {"sidebar-toggle": {"text_key": "z", "modifiers": ["command"]}}
+        b, _ = self._bridge("codex-app", override)
+        sent = []
+        b._send_keystroke = lambda spec: sent.append(spec) or _noop()
+        b._exec_action("sidebar-toggle")
+        self.assertEqual(sent[0]["text_key"], "z")   # 既定は "b"
+
+
+class CodexCliMapTests(unittest.TestCase):
+    """#57: codex CLI 調査結果に基づくマップ (codex-cli 0.147.0)。"""
+
+    def test_confirmed_bindings(self):
+        m = main_mod.CODEX_CLI_KEYSTROKE_MAP
+        self.assertEqual(m["plan-mode"], {"key_code": 48, "modifiers": ["shift"]})
+        self.assertEqual(m["inference-effort"], {"key_code": 47, "modifiers": ["option"]})
+        self.assertEqual(m["interrupt"], {"key_code": 53})
+        self.assertEqual(m["compact"]["text"], "/compact")
+        self.assertTrue(m["compact"]["enter"])
+
+    def test_unknown_actions_not_mapped(self):
+        """調査で unknown だったものは誤送出を避けるため非マップ。"""
+        for aid in ("git", "pr", "branch", "next-session", "prev-session"):
+            self.assertNotIn(aid, main_mod.CODEX_CLI_KEYSTROKE_MAP, aid)
+
+    def test_all_targets_exist_in_catalog(self):
+        from server import actions
+        for aid in main_mod.CODEX_CLI_KEYSTROKE_MAP:
+            self.assertIn(aid, actions.ACTION_IDS, aid)
+
+
+class SpecSanitizeTests(unittest.TestCase):
+    """#55 レビュー指摘: ユーザー設定由来の spec を AppleScript に渡す前に検証する。"""
+
+    def test_rejects_injected_modifier(self):
+        evil = {"key_code": 53,
+                "modifiers": ['command down}\ndo shell script "touch /tmp/pwned"\n--']}
+        self.assertIsNone(main_mod.Bridge._sanitize_spec(evil))
+
+    def test_rejects_unknown_modifier_and_bad_types(self):
+        self.assertIsNone(main_mod.Bridge._sanitize_spec({"key_code": 1, "modifiers": ["hyper"]}))
+        self.assertIsNone(main_mod.Bridge._sanitize_spec({"key_code": "53"}))
+        self.assertIsNone(main_mod.Bridge._sanitize_spec({"key_code": True}))
+        self.assertIsNone(main_mod.Bridge._sanitize_spec({"key_code": 999}))
+        self.assertIsNone(main_mod.Bridge._sanitize_spec({"text": ""}))
+        self.assertIsNone(main_mod.Bridge._sanitize_spec("not a dict"))
+
+    def test_accepts_valid_specs(self):
+        ok = main_mod.Bridge._sanitize_spec({"key_code": 48, "modifiers": ["shift"]})
+        self.assertEqual(ok, {"modifiers": ["shift"], "key_code": 48})
+        ok2 = main_mod.Bridge._sanitize_spec({"text": "/compact", "enter": True})
+        self.assertEqual(ok2, {"text": "/compact", "enter": True})
+
+    def test_builtin_maps_all_pass_validation(self):
+        for name in ("KEYSTROKE_MAP", "CODEX_APP_KEYSTROKE_MAP", "CODEX_CLI_KEYSTROKE_MAP"):
+            for aid, spec in getattr(main_mod, name).items():
+                self.assertIsNotNone(main_mod.Bridge._sanitize_spec(spec), f"{name}:{aid}")
+
+
+class KnobDirectionTests(unittest.TestCase):
+    """#55 レビュー指摘: ノブの左右回転でエフォートの上下が分かれること。"""
+
+    def test_inference_mode_uses_direction(self):
+        b = main_mod.Bridge.__new__(main_mod.Bridge)
+        b.cfg = {"knob": {"mode": "inference"}}
+        b.mode = "cmux-codex"
+        calls = []
+        b.run_action = lambda a, g: calls.append(a)
+        b._on_knob("ENC_CW", "tap")
+        b._on_knob("ENC_CC", "tap")
+        self.assertEqual(calls, ["inference-effort", "inference-effort-down"])
 
 if __name__ == "__main__":
     unittest.main()

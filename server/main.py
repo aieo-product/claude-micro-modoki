@@ -50,6 +50,26 @@ KEYSTROKE_MAP = {
     "input-nav":    {"key_code": 126},                         # ↑ (入力欄内の移動/履歴)
 }
 
+# codex CLI(cmux-codex) 向けキーストローク (#57 の実機調査に基づく, codex-cli 0.147.0)。
+# 出典: Codex CLI TUI のキーバインド/スラッシュコマンド調査(confirmed のみ採用、unknown は非マップ)。
+CODEX_CLI_KEYSTROKE_MAP = {
+    "plan-mode":        {"key_code": 48, "modifiers": ["shift"]},   # Shift+Tab: Default/Plan 循環
+    "inference-effort":      {"key_code": 47, "modifiers": ["option"]},  # Option+. : エフォート上げ
+    "inference-effort-down": {"key_code": 43, "modifiers": ["option"]},  # Option+, : エフォート下げ
+    "interrupt":        {"key_code": 53},                           # Esc: 実行中turnの中断
+    "compact":          {"text": "/compact", "enter": True},
+    "new-session":      {"text": "/new", "enter": True},
+    "resume":           {"text": "/resume", "enter": True},
+    "diff":             {"text": "/diff", "enter": True},
+    "fast-codex":       {"text": "/fast", "enter": True},
+    "side-chat":        {"text": "/side", "enter": True},
+    "archive":          {"text": "/archive", "enter": True},
+    "fork":             {"text": "/fork", "enter": True},
+    "accept-edits":     {"text": "/permissions", "enter": True},    # 承認モード切替
+    "back":             {"key_code": 123},                          # 入力欄内の移動(←)
+    "forward":          {"key_code": 124},                          # 入力欄内の移動(→)
+}
+
 # Claude Code 固有のスラッシュコマンド/キー。scope=common でも codex 端末へは送らない
 # (codex CLI に同名コマンドが無いと誤入力になるため, #43 レビュー指摘)。
 CLAUDE_ONLY_KEYSTROKES = {"compact", "resume", "new-session", "plan-mode", "accept-edits"}
@@ -207,7 +227,7 @@ class Bridge:
         elif mode == "scroll":
             action = "scroll-down" if cw else "scroll-up"
         elif mode == "inference":
-            action = "inference-effort"
+            action = "inference-effort" if cw else "inference-effort-down"
         elif mode == "input-nav":
             action = "input-nav"
         else:
@@ -483,6 +503,33 @@ class Bridge:
         # それ以外は実行先へディスパッチ (決定は本アプリ、実行のみ委譲)
         self._exec_action(action_id)
 
+    VALID_MODIFIERS = ("command", "shift", "option", "control")
+
+    @classmethod
+    def _sanitize_spec(cls, spec):
+        """送出 spec を検証し、安全な形だけ通す (#55 レビュー指摘: ユーザー設定由来の値が
+        AppleScript に連結されるため、allowlist 検証が無いと任意コード実行になりうる)。"""
+        if not isinstance(spec, dict):
+            return None
+        mods = spec.get("modifiers", [])
+        if not isinstance(mods, (list, tuple)) or any(m not in cls.VALID_MODIFIERS for m in mods):
+            return None
+        out = {"modifiers": list(mods)} if mods else {}
+        if "text_key" in spec or "text" in spec:
+            key = "text_key" if "text_key" in spec else "text"
+            value = spec[key]
+            if not isinstance(value, str) or not value:
+                return None
+            out[key] = value
+            if key == "text" and spec.get("enter"):
+                out["enter"] = True
+            return out
+        code = spec.get("key_code")
+        if isinstance(code, bool) or not isinstance(code, int) or not 0 <= code <= 255:
+            return None
+        out["key_code"] = code
+        return out
+
     async def _send_keystroke(self, spec: dict):
         """前面アプリへ System Events でキーストローク送出 (macOS, #5)。
         入力監視でなく Accessibility 権限が必要。値はハードコードの KEYSTROKE_MAP 由来。"""
@@ -517,25 +564,46 @@ class Bridge:
         ctx = actions_mod.mode_context(self.mode)
         fam = actions_mod.mode_family(self.mode)
         if fam == "codex" and ctx == "app":
-            # 公式 Codex(ChatGPT) アプリへショートカットで委譲 (#42)。実機メニューから採取した割当のみ。
-            spec = CODEX_APP_KEYSTROKE_MAP.get(action_id)
+            # 公式 Codex(ChatGPT) アプリへショートカットで委譲 (#42)。既定は実機メニューから採取した
+            # 割当のみ。公式側で既定未割り当ての機能は config.codex_app_shortcuts で上書きできる (#55)。
+            overrides = (getattr(self, "cfg", None) or {}).get("codex_app_shortcuts") or {}
+            spec = overrides.get(action_id) or CODEX_APP_KEYSTROKE_MAP.get(action_id)
             if spec is None:
-                print(f"[action] {action_id} -> codex-app 未対応 (ショートカット未確認)", flush=True)
+                print(f"[action] {action_id} -> codex-app 未割当: 公式アプリの設定 > キーボード"
+                      f"ショートカットで割り当て、設定の codex_app_shortcuts に登録してください",
+                      flush=True)
+                return
+            safe = self._sanitize_spec(spec)
+            if safe is None:
+                print(f"[action] {action_id} -> codex-app: 不正なショートカット定義のため送出しない", flush=True)
                 return
             if self.loop:
-                self.loop.create_task(self._send_keystroke(spec))
+                self.loop.create_task(self._send_keystroke(safe))
             print(f"[action] {action_id} -> codex-app ショートカット送出", flush=True)
             return
-        if fam != "claude" and action_id in CLAUDE_ONLY_KEYSTROKES:
-            # Claude Code 固有のコマンド/キーは codex 端末へ送らない (#43 レビュー指摘)
-            print(f"[action] {action_id} -> claude 端末専用のため送出しない ({self.mode})", flush=True)
-            return
-        spec = KEYSTROKE_MAP.get(action_id)
+        # ユーザーが明示指定した端末向けショートカットを最優先 (#55)。
+        spec = ((getattr(self, "cfg", None) or {}).get("terminal_shortcuts") or {}).get(action_id) or None
+        if spec is None and fam == "codex":
+            # codex CLI は専用マップを優先 (#57 調査で確認済みの割当)
+            spec = CODEX_CLI_KEYSTROKE_MAP.get(action_id)
         if spec is None:
-            print(f"[action] {action_id} -> キーストローク未定義 (今後追加)", flush=True)
+            if fam != "claude" and action_id in CLAUDE_ONLY_KEYSTROKES:
+                # Claude Code 固有のコマンド/キーは codex 端末へ送らない (#43)。
+                # 送りたい場合は config.terminal_shortcuts で明示指定する。
+                print(f"[action] {action_id} -> claude 端末専用のため送出しない ({self.mode})。"
+                      f"送出するには設定の terminal_shortcuts に登録してください", flush=True)
+                return
+            spec = KEYSTROKE_MAP.get(action_id)
+        if spec is None:
+            print(f"[action] {action_id} -> キーストローク未定義。設定の terminal_shortcuts に"
+                  f"登録すると送出できます", flush=True)
+            return
+        safe = self._sanitize_spec(spec)
+        if safe is None:
+            print(f"[action] {action_id} -> 不正なショートカット定義のため送出しない", flush=True)
             return
         if self.loop:
-            self.loop.create_task(self._send_keystroke(spec))
+            self.loop.create_task(self._send_keystroke(safe))
         print(f"[action] {action_id} -> keystroke 送出 ({self.mode})", flush=True)
 
     def _resolve_selected_or_oldest(self, result: str):
