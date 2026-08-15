@@ -1,0 +1,56 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "python3 /ABSOLUTE/PATH/TO/claude-micro-modoki/codex_hook_client.py", "timeout": 10 }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          { "type": "command", "command": "python3 /ABSOLUTE/PATH/TO/claude-micro-modoki/codex_hook_client.py", "timeout": 10 }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "python3 /ABSOLUTE/PATH/TO/claude-micro-modoki/codex_hook_client.py", "timeout": 10 }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          { "type": "command", "command": "python3 /ABSOLUTE/PATH/TO/claude-micro-modoki/codex_hook_client.py", "timeout": 10 }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          { "type": "command", "command": "python3 /ABSOLUTE/PATH/TO/claude-micro-modoki/codex_hook_client.py", "timeout": 10 }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          { "type": "command", "command": "python3 /ABSOLUTE/PATH/TO/claude-micro-modoki/codex_hook_client.py", "timeout": 10 }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          { "type": "command", "command": "python3 /ABSOLUTE/PATH/TO/claude-micro-modoki/codex_hook_client.py", "timeout": 10 }
+        ]
+      }
+    ]
+  }
+}
