@@ -191,6 +191,34 @@ class HookClientTests(unittest.TestCase):
                 # POST で JSON 化可能な payload であることも保証する。
                 json.dumps(captured[0])
 
+    def test_codex_error_events_pass_supported_gate(self):
+        """#75: 前方互換で許可したエラー系イベントは gate を通り family=codex で転送される。
+        (codex-cli 0.147.0 実測では未発火。発火し始めたときに素通しになることの担保)"""
+        for event in ("StopFailure", "PostToolUseFailure"):
+            with self.subTest(event=event):
+                captured = []
+
+                def post(payload):
+                    captured.append(payload)
+                    return _Response()
+
+                stdin = io.StringIO(json.dumps({
+                    "hook_event_name": event,
+                    "session_id": "session-err",
+                    "message": "tool failed",
+                }))
+                with mock.patch.object(
+                        codex_hook_client, "post_event", side_effect=post), \
+                        mock.patch.object(codex_hook_client, "log"), \
+                        mock.patch.object(codex_hook_client.sys, "stdin", stdin):
+                    result = codex_hook_client.main()
+
+                self.assertEqual(result, 0)
+                self.assertEqual(len(captured), 1)
+                self.assertEqual(captured[0]["event"], event)
+                self.assertEqual(captured[0]["family"], "codex")
+                self.assertEqual(captured[0]["message"], "tool failed")
+
     @unittest.skipIf(codex_hook_client.fcntl is None, "fcntl is unavailable")
     def test_codex_log_skips_silently_when_lock_is_contended(self):
         """ログロック競合は Codex を待たせず、書き込みもしない。"""

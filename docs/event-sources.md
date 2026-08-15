@@ -186,6 +186,20 @@ turn スコープは `turn_id`、多くは `permission_mode`。`PreToolUse`/`Pos
 > exec の `--approve-for-me`（自動承認）経路でも hook は request 時点で発火する（承認の解決前にタップできる）。
 > 承認"解決"の専用イベントは無いので、次の `PostToolUse`/`Stop` で消灯するか、bridge 側の承認応答で解除する設計にする。
 
+> **★2026-08-15 エラー系イベントの実測（#75）**: ツール失敗（`false` exit 1 / 不在パス `ls`）を走らせても
+> **`PostToolUseFailure` / `StopFailure` は発火しない**（codex-cli **0.147.0** で確認）。経路は通常形
+> （… → PreToolUse → **PostToolUse** → Stop → …）のまま。失敗ツールの `PostToolUse.tool_response` は
+> **ツール出力テキストのみ**（`false` は空文字、`ls` はエラーメッセージ文字列）で、exit code・成否フラグ等の
+> 構造化フィールドは無い。`Stop` payload にもエラー情報なし（`last_assistant_message` のみ）。
+> API エラー系（rate limit 等）での StopFailure 相当はこの手順では誘発できておらず未検証。
+> → **hooks 経由では codex のエラーを機械判定できない**ため、codex の error LED は app-server の
+> `systemError`/`error` 通知（§3.2）が本命。hooks 側はエラー系が将来追加されたとき拾える状態だけ維持する
+> （codex_hook_client の SUPPORTED_EVENTS に前方互換で許可済み。bridge 側ハンドラは family 非依存で受理可能）。
+> 採取時の注意: 未知イベント名を hooks.json に足しても拒否されない（無害に無視）/
+> `codex exec` は 0.147.0 では非管理フックを trust なしで自動バイパス実行（警告表示）するが、
+> **0.144.1 では project-local hooks が exec から発火しない**（自動バイパスなし。エラー系の有無は同版では判定不能）/
+> **`--sandbox read-only` では hook は動いてもファイル書込が封じられ、logger 型の採取が偽陰性になる**（`workspace-write` で採取する）。
+
 **設定**（`~/.codex/hooks.json` または `config.toml` の `[hooks]`。プロジェクト `<repo>/.codex/` も可）:
 
 ```toml

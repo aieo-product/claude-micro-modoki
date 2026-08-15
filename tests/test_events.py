@@ -544,6 +544,25 @@ class EventApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(server_main.bridge.agent_state[index]["state"], "error")
         self.assertEqual(server_main.bridge.events[-1]["state"], "error")
 
+    async def test_codex_error_events_reach_error_state(self):
+        """#75: bridge は family=codex のエラー系イベントでも error LED に遷移できる。
+        codex hooks は 0.144.1/0.147.0 実測でエラー系未発火のため現状は将来互換の担保
+        (発火し次第 client が素通しし、この経路で赤が点く)。"""
+        for event in ("PostToolUseFailure", "StopFailure"):
+            with self.subTest(event=event):
+                sid = f"codex-error-{event}"
+                await self._post_event(
+                    event="SessionStart", family="codex", session_id=sid)
+                index = server_main.bridge.sessions[sid]
+
+                await self._post_event(
+                    event=event, family="codex", session_id=sid,
+                    tool_name="Bash", message="tool failed")
+
+                self.assertEqual(
+                    server_main.bridge.agent_state[index],
+                    {"state": "error", "family": "codex"})
+
     async def test_decision_records_event_and_preserves_approval_flow(self):
         """補足: /decision は監視記録を追加し、既存の承認結果を維持する。"""
         sid = "decision-session"

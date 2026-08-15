@@ -34,6 +34,8 @@ CLAUDE_EVENTS = (
     "StopFailure",
     "SessionEnd",
     "PostToolUse",
+    # ツールレベルの失敗を error LED に出す (bridge 側ハンドラの活性化, #75)
+    "PostToolUseFailure",
 )
 CODEX_EVENTS = ("SessionStart", "UserPromptSubmit", "Stop", "SessionEnd")
 CODEX_TOOL_EVENTS = ("PreToolUse", "PermissionRequest", "PostToolUse")

@@ -32,6 +32,10 @@ SUPPORTED_EVENTS = frozenset({
     "PostToolUse",
     "Stop",
     "SessionEnd",
+    # エラー系は codex-cli 0.147.0 の実測でツール失敗でも未発火 (docs/event-sources.md §3.1)。
+    # 将来 codex 側に追加されたとき素通しで error LED に届くよう前方互換で許可する (#75)
+    "StopFailure",
+    "PostToolUseFailure",
 })
 
 # loopback 宛のトークン/cwd/tool_input を環境変数の外部 proxy へ流さない。
