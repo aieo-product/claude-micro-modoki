@@ -25,6 +25,8 @@ separateMicrophoneKeys = true
 keycapId = "FAST"
 [desktop.codex-micro-layout.slots.ACT07]
 keycapId = "APPR"
+[desktop.codex-micro-layout.slots.ACT08]
+keycapId = "UNDO"
 [desktop.codex-micro-layout.slots.ACT09]
 keycapId = "SPLIT"
 
@@ -90,8 +92,9 @@ class MappingTests(unittest.TestCase):
 
     def test_slot_actions_known_only(self):
         slots = oc.slot_actions(self._parsed())
-        self.assertEqual(slots["ACT06"], "fast-codex")
+        self.assertEqual(slots["ACT06"], "fast")   # FAST は統合後 id へ (#59)
         self.assertEqual(slots["ACT07"], "approve")
+        self.assertEqual(slots["ACT08"], "undo")   # UNDO/REDO キーキャップ対応 (#58)
         self.assertNotIn("ACT09", slots)                        # SPLIT は未対応
         _, notes = oc.to_bridge_config(self._parsed())
         self.assertTrue(any("SPLIT" in n for n in notes))

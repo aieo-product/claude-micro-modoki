@@ -42,12 +42,15 @@ def mode_for(family: str, context: str) -> str | None:
 
 
 # ---- アクションカタログ（issue #5 第一案・編集可能） ----
-# id / label / icon(絵文字デフォルト) / scope
+# id / label / icon(絵文字デフォルト) / scope / official
+# official: 本家 Codex Micro の設定体系(キーキャップ既定・割当ドロップダウン・
+# オプション)に対応が確認できるか (#59)。省略時は True(本家相当)。
+# False の項目は本アプリ固有として UI で明示する(判断: 削除せず分類のみ)。
 ACTIONS = [
     # 共通
     {"id": "approve",       "label": "承認",              "icon": "✅", "scope": "common"},
     {"id": "reject",        "label": "拒否",              "icon": "⛔", "scope": "common"},
-    {"id": "hold",          "label": "保留 (ask)",        "icon": "⏸️", "scope": "common"},
+    {"id": "hold",          "label": "保留 (ask)",        "icon": "⏸️", "scope": "common", "official": False},  # Claude 承認3択の ask
     {"id": "focus-term",    "label": "ターミナル前面化",  "icon": "🖥️", "scope": "common"},
     {"id": "new-session",   "label": "新規セッション",    "icon": "➕", "scope": "common"},
     {"id": "next-session",  "label": "次のセッション",    "icon": "⏭️", "scope": "common"},
@@ -55,6 +58,9 @@ ACTIONS = [
     {"id": "scroll-up",     "label": "スクロール↑",       "icon": "🔼", "scope": "common"},
     {"id": "scroll-down",   "label": "スクロール↓",       "icon": "🔽", "scope": "common"},
     {"id": "interrupt",     "label": "割り込み (Esc)",    "icon": "⏹️", "scope": "common"},
+    {"id": "undo",          "label": "元に戻す",          "icon": "↺", "scope": "common"},   # 本家 UNDO キーキャップ (#58)
+    {"id": "redo",          "label": "やり直す",          "icon": "↻", "scope": "common"},   # 本家 REDO キーキャップ (#58)
+    {"id": "fast",          "label": "FAST (高速モード)", "icon": "⚡", "scope": "common"},  # fast-opus/fast-codex を統合 (#59)
     # コントロール系（十字/ノブ/マイク割当用, #34。実処理は #35）
     {"id": "forward",        "label": "進む",              "icon": "▶️", "scope": "control"},
     {"id": "back",           "label": "前へ (戻る)",       "icon": "◀️", "scope": "control"},
@@ -64,15 +70,14 @@ ACTIONS = [
     {"id": "inference-effort-down", "label": "推論エフォート↓", "icon": "🧊", "scope": "control"},
     {"id": "scroll-convo",   "label": "会話スクロール",    "icon": "🖱️", "scope": "control"},
     {"id": "push-to-talk",   "label": "プッシュトゥトーク","icon": "🎙️", "scope": "control"},
-    # claude 専用
-    {"id": "plan-mode",     "label": "プランモード切替",  "icon": "📋", "scope": "common"},
-    {"id": "compact",       "label": "コンパクト",        "icon": "🗜️", "scope": "common"},
-    {"id": "accept-edits",  "label": "承認モード切替",    "icon": "✏️", "scope": "common"},
-    {"id": "resume",        "label": "セッション再開",    "icon": "↩️", "scope": "common"},
-    {"id": "fast-opus",     "label": "ファスト (Opus)",   "icon": "⚡", "scope": "claude"},
+    # スラッシュコマンド系 (#43)。official:False = 本家 Micro の設定体系に無い(本アプリ固有)
+    {"id": "plan-mode",     "label": "プランモード切替",  "icon": "📋", "scope": "common"},  # 本家にも有(公式 commandId)
+    {"id": "compact",       "label": "コンパクト",        "icon": "🗜️", "scope": "common", "official": False},
+    {"id": "accept-edits",  "label": "承認モード切替",    "icon": "✏️", "scope": "common", "official": False},
+    {"id": "resume",        "label": "セッション再開",    "icon": "↩️", "scope": "common", "official": False},
+    # claude 専用 (現在は空。fast-opus は fast へ統合 #59)
     # codex 専用
     {"id": "fork",          "label": "FORK",              "icon": "🍴", "scope": "codex"},
-    {"id": "fast-codex",    "label": "FAST (高速)",       "icon": "🚀", "scope": "codex"},
     {"id": "side-chat",     "label": "サイドチャット",    "icon": "💬", "scope": "codex"},
     {"id": "archive",       "label": "アーカイブ",        "icon": "🗄️", "scope": "codex"},
     {"id": "pin",           "label": "ピン留め",          "icon": "📌", "scope": "codex"},
@@ -98,6 +103,9 @@ ACTIONS = [
     {"id": "env-3",         "label": "環境アクション3",   "icon": "🎛️", "scope": "codex"},
 ]
 ACTION_IDS = {a["id"] for a in ACTIONS}
+
+# 廃止 id → 後継 id (#59 FAST 統合)。config.load/save が既存設定を書き換える。
+LEGACY_ACTION_IDS = {"fast-opus": "fast", "fast-codex": "fast"}
 
 
 def action_scope(action_id: str) -> str | None:

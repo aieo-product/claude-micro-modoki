@@ -115,7 +115,8 @@ class KeystrokeMapExpansionTests(unittest.TestCase):
 
     def test_specs_are_wellformed(self):
         for aid, spec in main_mod.KEYSTROKE_MAP.items():
-            self.assertTrue("text" in spec or "key_code" in spec, aid)
+            self.assertTrue(
+                "text" in spec or "key_code" in spec or "text_key" in spec, aid)
             if "key_code" in spec:
                 self.assertIsInstance(spec["key_code"], int, aid)
             for mod in spec.get("modifiers", []):
@@ -255,6 +256,8 @@ class CodexAppMapCorrectnessTests(unittest.TestCase):
         "next-session":   ("]", ["command", "shift"]),        # ⇧⌘]
         "back":           ("[", ["command"]),                 # ⌘[
         "forward":        ("]", ["command"]),                 # ⌘]
+        "undo":           ("z", ["command"]),                 # ⌘Z 最後の操作を元に戻す (#58)
+        "redo":           ("z", ["command", "shift"]),        # ⇧⌘Z 直前の操作をやり直す (#58)
     }
 
     def test_exact_key_and_modifiers(self):
@@ -268,7 +271,7 @@ class CodexAppMapCorrectnessTests(unittest.TestCase):
     def test_no_unassigned_actions_mapped(self):
         """既定が未割り当てのアクションは送出対象にしない(誤送出回避)。
         採取元 ChatGPT.app 26.803.81509 基準。アプリ更新で既定が付いたら意図的に更新する。"""
-        for aid in ("git", "pr", "branch", "merge", "fast-codex", "new-window"):
+        for aid in ("git", "pr", "branch", "merge", "fast", "new-window"):
             self.assertNotIn(aid, main_mod.CODEX_APP_KEYSTROKE_MAP, aid)
 
 
@@ -369,6 +372,65 @@ class SpecSanitizeTests(unittest.TestCase):
         for name in ("KEYSTROKE_MAP", "CODEX_APP_KEYSTROKE_MAP", "CODEX_CLI_KEYSTROKE_MAP"):
             for aid, spec in getattr(main_mod, name).items():
                 self.assertIsNotNone(main_mod.Bridge._sanitize_spec(spec), f"{name}:{aid}")
+
+
+class UndoRedoFastTests(unittest.TestCase):
+    """#58 Undo/Redo 追加と #59 FAST 統合の実行経路。"""
+
+    def _bridge(self, mode):
+        b = main_mod.Bridge.__new__(main_mod.Bridge)
+        b.mode = mode
+        sent = []
+        b._send_keystroke = lambda spec: sent.append(spec) or _noop()
+
+        class _Loop:
+            def create_task(self, coro):
+                coro.close()
+
+        b.loop = _Loop()
+        return b, sent
+
+    def test_undo_redo_on_claude_terminal(self):
+        b, sent = self._bridge("cmux-claude")
+        b._exec_action("undo")
+        b._exec_action("redo")
+        self.assertEqual([s["text_key"] for s in sent], ["z", "z"])
+        self.assertEqual(sent[0]["modifiers"], ["command"])
+        self.assertIn("shift", sent[1]["modifiers"])
+
+    def test_undo_redo_guarded_on_codex_terminal(self):
+        """codex CLI に対応が無いため cmux-codex では送出しない (#58)。"""
+        b, sent = self._bridge("cmux-codex")
+        b._exec_action("undo")
+        b._exec_action("redo")
+        self.assertEqual(sent, [])
+
+    def test_undo_redo_on_codex_app(self):
+        """codex-app は #51 採取の既定割当 ⌘Z / ⇧⌘Z で送出する。"""
+        b, sent = self._bridge("codex-app")
+        b._exec_action("undo")
+        b._exec_action("redo")
+        self.assertEqual(len(sent), 2)
+        self.assertEqual(sent[0]["text_key"], "z")
+
+    def test_fast_runs_on_both_cli_families(self):
+        """統合後の fast は claude=/fast, codex CLI=/fast で送出される (#59)。"""
+        for mode in ("cmux-claude", "cmux-codex"):
+            b, sent = self._bridge(mode)
+            b._exec_action("fast")
+            self.assertEqual(sent[0]["text"], "/fast", mode)
+
+    def test_fast_not_sent_on_codex_app_by_default(self):
+        """codex-app の既定は未割当 (config-required)。"""
+        b, sent = self._bridge("codex-app")
+        b._exec_action("fast")
+        self.assertEqual(sent, [])
+
+    def test_legacy_ids_removed_from_maps(self):
+        for m in (main_mod.KEYSTROKE_MAP, main_mod.CODEX_CLI_KEYSTROKE_MAP,
+                  main_mod.CODEX_APP_KEYSTROKE_MAP):
+            self.assertNotIn("fast-opus", m)
+            self.assertNotIn("fast-codex", m)
 
 
 class KnobDirectionTests(unittest.TestCase):

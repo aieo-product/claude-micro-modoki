@@ -58,6 +58,9 @@ KEYSTROKE_MAP = {
     "resume":       {"text": "/resume", "enter": True},        # セッション再開
     "new-session":  {"text": "/clear", "enter": True},         # 履歴クリア=新規セッション相当
     "input-nav":    {"key_code": 126},                         # ↑ (入力欄内の移動/履歴)
+    "undo":         {"text_key": "z", "modifiers": ["command"]},           # 元に戻す ⌘Z (#58)
+    "redo":         {"text_key": "z", "modifiers": ["command", "shift"]},  # やり直す ⇧⌘Z (#58)
+    "fast":         {"text": "/fast", "enter": True},          # Claude Code の高速モード切替 (#59)
 }
 
 # codex CLI(cmux-codex) 向けキーストローク (#57 の実機調査に基づく, codex-cli 0.147.0)。
@@ -71,7 +74,7 @@ CODEX_CLI_KEYSTROKE_MAP = {
     "new-session":      {"text": "/new", "enter": True},
     "resume":           {"text": "/resume", "enter": True},
     "diff":             {"text": "/diff", "enter": True},
-    "fast-codex":       {"text": "/fast", "enter": True},
+    "fast":             {"text": "/fast", "enter": True},           # 高速モード (#59 で fast に統合)
     "side-chat":        {"text": "/side", "enter": True},
     "archive":          {"text": "/archive", "enter": True},
     "fork":             {"text": "/fork", "enter": True},
@@ -80,9 +83,14 @@ CODEX_CLI_KEYSTROKE_MAP = {
     "forward":          {"key_code": 124},                          # 入力欄内の移動(→)
 }
 
-# Claude Code 固有のスラッシュコマンド/キー。scope=common でも codex 端末へは送らない
-# (codex CLI に同名コマンドが無いと誤入力になるため, #43 レビュー指摘)。
-CLAUDE_ONLY_KEYSTROKES = {"compact", "resume", "new-session", "plan-mode", "accept-edits"}
+# claude 端末では送出するが、codex 端末には対応が無い/未確認のため送らない id
+# (#43 レビュー指摘 / #58)。codex CLI 側に確認済みの割当があるものは
+# CODEX_CLI_KEYSTROKE_MAP が先に解決するため、このガードには落ちてこない。
+# 送りたい場合は config.terminal_shortcuts で明示指定する。
+CLAUDE_ONLY_KEYSTROKES = {
+    "compact", "resume", "new-session", "plan-mode", "accept-edits",
+    "undo", "redo",  # codex CLI に undo 概念が確認できていない (#58)
+}
 
 # codex-app(公式 Codex/ChatGPT アプリ)向けのショートカット (#42)。
 # 実機のメニューバー(AXMenuItemCmdChar/CmdModifiers)から採取した実在の割当のみ。
@@ -101,6 +109,8 @@ CODEX_APP_KEYSTROKE_MAP = {
     "next-session":  {"text_key": "]", "modifiers": ["command", "shift"]},     # 次のチャット ⇧⌘]
     "back":          {"text_key": "[", "modifiers": ["command"]},              # 前へ ⌘[
     "forward":       {"text_key": "]", "modifiers": ["command"]},              # 進む ⌘]
+    "undo":          {"text_key": "z", "modifiers": ["command"]},              # 最後の操作を元に戻す ⌘Z (#58)
+    "redo":          {"text_key": "z", "modifiers": ["command", "shift"]},     # 直前の操作をやり直す ⇧⌘Z (#58)
 }
 
 AGENT_KEY_COUNT = 6
