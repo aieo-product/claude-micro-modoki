@@ -3,9 +3,26 @@
 import copy
 import json
 import os
+import sys
 import threading
 
-CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "config.json")
+
+def _default_config_path() -> str:
+    """config.json の場所。ソース実行時はリポジトリ直下 (gitignore 済み)。
+    PyInstaller (.app/.exe) ではバンドル内が書き込み不可の展開先になるため、
+    OS ごとのユーザー設定ディレクトリに保存する (#37)。"""
+    if not getattr(sys, "frozen", False):
+        return os.path.join(os.path.dirname(__file__), "..", "config.json")
+    if sys.platform == "darwin":
+        base = os.path.expanduser("~/Library/Application Support")
+    elif sys.platform == "win32":
+        base = os.environ.get("APPDATA") or os.path.expanduser("~")
+    else:
+        base = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+    return os.path.join(base, "ClaudeMicro", "config.json")
+
+
+CONFIG_PATH = _default_config_path()
 
 DEFAULT_CONFIG = {
     # LED 全体輝度 (%)。実機反映は vendor プロトコル解明後 (T0-4)
@@ -93,6 +110,10 @@ def load() -> dict:
 def save(cfg: dict) -> dict:
     merged = _deep_merge(DEFAULT_CONFIG, cfg)
     with _lock:
+        # frozen 実行の初回保存ではユーザー設定ディレクトリがまだ無い (#37)
+        parent = os.path.dirname(CONFIG_PATH)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
             json.dump(merged, f, ensure_ascii=False, indent=2)
     return merged

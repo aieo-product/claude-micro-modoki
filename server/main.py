@@ -29,11 +29,17 @@ from .device import EFFECT, STATE_BRIGHTNESS, STATE_COLOR, HidAdapter
 
 HOST = "127.0.0.1"
 PORT = 35703
-CONSOLE_PATH = (
-    os.path.join(sys._MEIPASS, "console", "index.html")
-    if getattr(sys, "frozen", False)
-    else os.path.join(os.path.dirname(__file__), "..", "console", "index.html")
-)
+
+
+def _console_path() -> str:
+    """console/index.html の場所。PyInstaller では datas が sys._MEIPASS 配下に
+    展開され、PYZ 内のモジュールから __file__ 相対では辿れない (#37)。"""
+    if getattr(sys, "frozen", False):
+        return os.path.join(sys._MEIPASS, "console", "index.html")
+    return os.path.join(os.path.dirname(__file__), "..", "console", "index.html")
+
+
+CONSOLE_PATH = _console_path()
 TOKEN = os.environ.get("APPROVAL_BRIDGE_TOKEN", "")
 
 # アクション → キーストローク (claude系/cmux 端末向け, #5)。macOS key code。
