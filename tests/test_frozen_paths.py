@@ -122,9 +122,8 @@ class ConfigPathTests(unittest.TestCase):
 class ConsoleRouteTests(unittest.IsolatedAsyncioTestCase):
     """GET / が設定コンソールを配信する (#37 が流出した経路の常設テスト)。"""
 
-    @unittest.skipUnless(
-        _can_bind_loopback(), "loopback bind 不可環境では HTTP 経由の検証を行えない")
-    async def test_get_root_serves_console(self):
+    async def _get_root(self):
+        """デバイスなしで実アプリを起動し GET / の (status, body) を返す。"""
         env_patch = mock.patch.dict(os.environ, {"CLAUDEMICRO_NO_DEVICE": "1"})
         token_patch = mock.patch.object(server_main, "TOKEN", "")
         with env_patch, token_patch:
@@ -134,11 +133,30 @@ class ConsoleRouteTests(unittest.IsolatedAsyncioTestCase):
             await client.start_server()
             try:
                 resp = await client.get("/")
-                self.assertEqual(resp.status, 200)
-                body = await resp.text()
-                self.assertIn("Claude Micro 設定", body)
+                return resp.status, await resp.text()
             finally:
                 await client.close()
+
+    @unittest.skipUnless(
+        _can_bind_loopback(), "loopback bind 不可環境では HTTP 経由の検証を行えない")
+    async def test_get_root_serves_console(self):
+        status, body = await self._get_root()
+        self.assertEqual(status, 200)
+        self.assertIn("Claude Micro 設定", body)
+
+    @unittest.skipUnless(
+        _can_bind_loopback(), "loopback bind 不可環境では HTTP 経由の検証を行えない")
+    async def test_get_root_serves_from_console_path_constant(self):
+        # 配信元が CONSOLE_PATH 定数であることを固定する。frozen 時の
+        # 差し替え (sys._MEIPASS 基準) がそのまま配信に効く前提を守る。
+        with tempfile.TemporaryDirectory() as tmp:
+            alt = os.path.join(tmp, "index.html")
+            with open(alt, "w", encoding="utf-8") as f:
+                f.write("<html>alt-console-marker</html>")
+            with mock.patch.object(server_main, "CONSOLE_PATH", alt):
+                status, body = await self._get_root()
+        self.assertEqual(status, 200)
+        self.assertIn("alt-console-marker", body)
 
 
 if __name__ == "__main__":
