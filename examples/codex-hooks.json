@@ -21,6 +21,13 @@
         ]
       }
     ],
+    "StopFailure": [
+      {
+        "hooks": [
+          { "type": "command", "command": "python3 /ABSOLUTE/PATH/TO/claude-micro-modoki/codex_hook_client.py", "timeout": 10 }
+        ]
+      }
+    ],
     "SessionEnd": [
       {
         "hooks": [
@@ -45,6 +52,14 @@
       }
     ],
     "PostToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          { "type": "command", "command": "python3 /ABSOLUTE/PATH/TO/claude-micro-modoki/codex_hook_client.py", "timeout": 10 }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
       {
         "matcher": ".*",
         "hooks": [

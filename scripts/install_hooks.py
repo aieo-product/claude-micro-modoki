@@ -37,8 +37,10 @@ CLAUDE_EVENTS = (
     # ツールレベルの失敗を error LED に出す (bridge 側ハンドラの活性化, #75)
     "PostToolUseFailure",
 )
-CODEX_EVENTS = ("SessionStart", "UserPromptSubmit", "Stop", "SessionEnd")
-CODEX_TOOL_EVENTS = ("PreToolUse", "PermissionRequest", "PostToolUse")
+# StopFailure / PostToolUseFailure は codex-cli 0.147.0 実測で未発火だが、未知イベント名は
+# 無害に無視されるため今から登録し、将来 codex 側に追加され次第 client が素通しできるようにする (#75)
+CODEX_EVENTS = ("SessionStart", "UserPromptSubmit", "Stop", "StopFailure", "SessionEnd")
+CODEX_TOOL_EVENTS = ("PreToolUse", "PermissionRequest", "PostToolUse", "PostToolUseFailure")
 
 Printer = Callable[[str], None]
 

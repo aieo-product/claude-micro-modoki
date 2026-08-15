@@ -13,6 +13,7 @@ REPO_DIR = Path(__file__).resolve().parents[1]
 if str(REPO_DIR) not in sys.path:
     sys.path.insert(0, str(REPO_DIR))
 
+import codex_hook_client  # noqa: E402
 from scripts import install_hooks  # noqa: E402
 
 
@@ -71,3 +72,15 @@ class CodexExampleSyncTests(unittest.TestCase):
                     self.assertEqual(group["matcher"], ".*")
                 else:
                     self.assertNotIn("matcher", group)
+
+
+class ClientInstallerConsistencyTests(unittest.TestCase):
+    """client の転送許可と installer の登録がずれない (#75)。
+
+    installer が登録しないイベントは client が起動されず「発火し次第素通し」が
+    成立しないため、両者の集合一致を強制する。"""
+
+    def test_codex_client_gate_equals_installer_registration(self):
+        registered = set(install_hooks.CODEX_EVENTS) | set(
+            install_hooks.CODEX_TOOL_EVENTS)
+        self.assertEqual(set(codex_hook_client.SUPPORTED_EVENTS), registered)
