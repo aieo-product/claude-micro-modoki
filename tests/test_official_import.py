@@ -140,8 +140,7 @@ class ImportApiTests(unittest.IsolatedAsyncioTestCase):
         self._saved_save = m.config_mod.save
         self._saved_adapter = m.bridge.adapter
         m.bridge.cfg = {
-            "brightness": 100, "timings": {"tap_max_ms": 400,
-                                           "double_window_ms": 350,
+            "brightness": 100, "timings": {"double_window_ms": 350,
                                            "long_min_ms": 600},
             "knob": {"mode": "scroll"}, "analog_stick": {"up": "plan-mode"},
             # ACT07 は学習済み(pos あり) / ACT08 は未学習(pos なし)

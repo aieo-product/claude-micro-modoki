@@ -14,7 +14,7 @@ class StickQuantizeTests(unittest.TestCase):
         events = []
         a = device_mod.HidAdapter(
             0x303A, 0x8360,
-            {"tap_max_ms": 400, "double_window_ms": 350, "long_min_ms": 600},
+            {"double_window_ms": 350, "long_min_ms": 600},
             on_gesture=lambda k, g: events.append((k, g)),
         )
         return a, events

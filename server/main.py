@@ -417,8 +417,12 @@ class Bridge:
     # ---- モード制御 (issue #7 → #11: 4モード) ----
 
     def set_mode(self, mode: str):
-        """4モードを切り替え。枠(HID書き込み)は**変化時のみ**反映（同一モードでは書き込まない=軽量）。"""
+        """4モードを切り替え。枠(HID書き込み)は**変化時のみ**反映（同一モードでは書き込まない=軽量）。
+        mode.enabled で除外したモードには手動切替 (ACT12) を含むどの経路からも入らない (#77)。"""
         if mode not in actions_mod.MODE_IDS or mode == self.mode:
+            return
+        if mode not in self.cfg["mode"].get("enabled", actions_mod.MODE_IDS):
+            print(f"[mode] {mode} は mode.enabled で除外中のため切替しない", flush=True)
             return
         self.mode = mode
         print(f"[mode] -> {mode}", flush=True)
@@ -859,11 +863,14 @@ async def handle_event(request: web.Request):
 
 
 async def handle_mode(request: web.Request):
-    """コンソールからのモード操作。body: {mode: <4モードid>} または {auto: true}"""
+    """コンソールからのモード操作。body: {mode: <4モードid>} または {auto: true}
+    mode.enabled で除外したモードは 400 で明示的に拒否する (#77)。"""
     body = await request.json()
     if body.get("auto") is True:
         bridge.auto_mode = True
     elif body.get("mode") in actions_mod.MODE_IDS:
+        if body["mode"] not in bridge.cfg["mode"].get("enabled", actions_mod.MODE_IDS):
+            return web.json_response({"error": "mode disabled"}, status=400)
         bridge.auto_mode = False
         bridge.set_mode(body["mode"])
     return web.json_response({"mode": bridge.mode, "auto_mode": bridge.auto_mode})
@@ -875,8 +882,18 @@ async def handle_get_config(request: web.Request):
 
 async def handle_put_config(request: web.Request):
     body = await request.json()
+    old = bridge.cfg
     bridge.cfg = config_mod.save(body)
     bridge.adapter.update_timings(bridge.cfg["timings"])
+    # mode.current / mode.auto の編集は再起動を待たず反映する (#77)。
+    # 差分検知なので、console が取得値をそのまま保存し直す通常運用では発火しない
+    # (物理キーで切替済みの live モードを勝手に戻さない)。
+    if bridge.cfg["mode"]["current"] != old["mode"]["current"]:
+        bridge.set_mode(bridge.cfg["mode"]["current"])
+    if bridge.cfg["mode"]["auto"] != old["mode"]["auto"]:
+        bridge.auto_mode = bridge.cfg["mode"]["auto"]
+    if bridge.cfg["device"] != old["device"]:
+        print("[config] device.vid/pid の変更は再起動後に反映されます", flush=True)
     return web.json_response(bridge.cfg)
 
 

@@ -4,7 +4,7 @@ import unittest
 
 from server.device import HidAdapter
 
-TIMINGS = {"tap_max_ms": 400, "double_window_ms": 350, "long_min_ms": 600}
+TIMINGS = {"double_window_ms": 350, "long_min_ms": 600}
 
 
 def _adapter(events):
