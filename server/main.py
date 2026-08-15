@@ -917,6 +917,12 @@ async def handle_put_config(request: web.Request):
         bridge.set_mode(bridge.cfg["mode"]["current"])
     if "auto" in body_mode and bridge.cfg["mode"]["auto"] != old["mode"]["auto"]:
         bridge.auto_mode = bridge.cfg["mode"]["auto"]
+    # enabled 編集で live モード自体が除外された場合も、除外モードに留まらない
+    # (enabled が常に優先)。有効な current があればそこへ、無ければ enabled の先頭へ。
+    enabled = _enabled_modes(bridge.cfg)
+    if bridge.mode not in enabled:
+        bridge.set_mode(bridge.cfg["mode"]["current"]
+                        if bridge.cfg["mode"]["current"] in enabled else enabled[0])
     if "device" in body and bridge.cfg["device"] != old["device"]:
         print("[config] device.vid/pid の変更は再起動後に反映されます", flush=True)
     return web.json_response(bridge.cfg)

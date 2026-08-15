@@ -222,6 +222,25 @@ class PutConfigModeTests(BridgeModeTestBase):
             {"mode": {"enabled": list(server_main.actions_mod.MODE_IDS)}})
         self.assertEqual(self.bridge.mode, "codex-app")
 
+    async def test_enabled_edit_evicts_live_mode_to_valid_current(self):
+        """enabled 編集で live モードを除外したら、有効な current へ退避する。"""
+        with mock.patch("builtins.print"):
+            self.bridge.set_mode("codex-app")
+        body = copy.deepcopy(self.bridge.cfg)
+        body["mode"]["enabled"] = ["cmux-claude", "cmux-codex"]
+        await self._put(body)
+        self.assertEqual(self.bridge.mode, "cmux-claude")
+
+    async def test_enabled_edit_evicts_to_first_enabled_when_current_excluded(self):
+        """current も除外されているときは enabled の先頭へ退避する。"""
+        with mock.patch("builtins.print"):
+            self.bridge.set_mode("codex-app")
+        body = copy.deepcopy(self.bridge.cfg)
+        body["mode"]["current"] = "codex-app"
+        body["mode"]["enabled"] = ["cmux-codex"]
+        await self._put(body)
+        self.assertEqual(self.bridge.mode, "cmux-codex")
+
     async def test_roundtrip_keeps_diverged_live_auto(self):
         """cfg.auto=True のまま live だけ手動 (False) の乖離状態でも、無編集往復で戻さない。"""
         self.assertTrue(self.bridge.cfg["mode"]["auto"])
