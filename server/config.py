@@ -73,7 +73,8 @@ DEFAULT_CONFIG = {
     # モード (issue #7 → #11: 4モード claude-app/codex-app/cmux-claude/cmux-codex)
     #   toggle_key: tap=family切替 / double=context切替 / long=auto 復帰 (docs/mode-behavior.md)
     #   auto: 前面アプリ監視で自動切替
-    #   enabled: 入れるモード。除外モードには手動切替・/api/mode・auto のどれからも入らない (#77)
+    #   enabled: 入れるモード。除外モードには手動切替・/api/mode・auto のどれからも入らない (#77)。
+    #     list 以外 (null 等)・空・未知 id のみは全モード扱いに正規化。current が除外中なら起動時は enabled の先頭
     #   ambient は色=family(claude/codex)、エフェクト=context(app/cmux)
     "mode": {
         "current": "cmux-claude",  # 起動時のモード (PUT /api/config で値を変えると即時反映 #77)
