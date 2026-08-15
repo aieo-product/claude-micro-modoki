@@ -21,15 +21,22 @@ SCRIPT = REPO_DIR / "scripts" / "install_service.sh"
 BASH = "/bin/bash" if sys.platform == "darwin" else "bash"
 PLIST_REL = Path("Library/LaunchAgents/com.claudemicro.bridge.plist")
 
-LAUNCHCTL_SHIM = """#!/bin/bash
+LEAK_CHECK = """# 子プロセスへ実トークンが環境継承されていたら記録する (レビュー指摘)
+if [[ -n "${APPROVAL_BRIDGE_TOKEN:-}${TOKEN:-}" ]]; then
+    touch "$state/leak"
+fi
+"""
+
+LAUNCHCTL_SHIM = f"""#!/bin/bash
 # テスト用 launchctl: bootstrap でマーカーを作り、以後だけ service print に応答する
-state="${CLAUDEMICRO_TEST_STATE:?}"
-case "${1:-}" in
+state="${{CLAUDEMICRO_TEST_STATE:?}}"
+{LEAK_CHECK}
+case "${{1:-}}" in
     bootstrap)
         touch "$state/bootstrapped"
         ;;
     print)
-        target="${2:-}"
+        target="${{2:-}}"
         if [[ "$target" == gui/*/* ]]; then
             [[ -e "$state/bootstrapped" ]] || exit 1
             echo "    state = running"
@@ -40,9 +47,10 @@ esac
 exit 0
 """
 
-NC_SHIM = """#!/bin/bash
+NC_SHIM = f"""#!/bin/bash
 # テスト用 nc -z: bootstrap 済みのときだけ「ポートが応答する」扱いにする
-state="${CLAUDEMICRO_TEST_STATE:?}"
+state="${{CLAUDEMICRO_TEST_STATE:?}}"
+{LEAK_CHECK}
 [[ -e "$state/bootstrapped" ]]
 """
 
@@ -167,9 +175,15 @@ class FakeInstallTests(InstallServiceTestBase):
 
     def test_install_with_token_embeds_real_value_with_0600(self):
         token = 'se&c<r>et"tok'
+        # 呼び出し元が TOKEN を export 済みでも、スクリプト内の TOKEN 代入が
+        # export 属性を引き継いで漏れないこと (export -n) も同時に検証する
         proc = self._install(
-            {"APPROVAL_BRIDGE_TOKEN": token, "CLAUDEMICRO_PORT": "45710"})
+            {"APPROVAL_BRIDGE_TOKEN": token, "CLAUDEMICRO_PORT": "45710",
+             "TOKEN": "caller-exported"})
         self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)
+        # 実トークンが launchctl/nc の環境へ継承されていない (shim が leak を記録する)
+        self.assertFalse((self.state / "leak").exists(),
+                         "子プロセスの環境に実トークンが継承された")
         path = self._installed_plist()
         mode = stat.S_IMODE(path.stat().st_mode)
         self.assertEqual(mode, 0o600, oct(mode))

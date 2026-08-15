@@ -3,14 +3,13 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd -P)"
-LABEL="com.claudemicro.bridge"
-DEFAULT_PORT=35703
 # インストール実行時の環境変数を plist の EnvironmentVariables へ取り込む (#73)。
 # 未設定なら plist に書かず、bridge は従来どおり既定値で動く。
+# 実値を dirname/sed/launchctl 等の子プロセスへ継承させないため、外部コマンドを
+# 一切呼ぶ前に取り込み、元の環境変数を unset + TOKEN の export 属性も落とす。
 TOKEN="${APPROVAL_BRIDGE_TOKEN:-}"
-unset APPROVAL_BRIDGE_TOKEN  # 実値を sed/launchctl 等の子プロセスへ継承させない
+unset APPROVAL_BRIDGE_TOKEN
+export -n TOKEN
 # 改行入りトークンはコマンド置換・XML 正規化・HTTP ヘッダのいずれでも壊れるため拒否する
 # (grep は行単位で改行自体を見ないため、改行は bash パターンで検出する)
 if [[ -n "$TOKEN" ]] && { [[ "$TOKEN" == *$'\n'* ]] \
@@ -18,6 +17,11 @@ if [[ -n "$TOKEN" ]] && { [[ "$TOKEN" == *$'\n'* ]] \
     echo "エラー: APPROVAL_BRIDGE_TOKEN に改行・タブ等の制御文字は使えません。" >&2
     exit 2
 fi
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd -P)"
+LABEL="com.claudemicro.bridge"
+DEFAULT_PORT=35703
 PORT_ENV="${CLAUDEMICRO_PORT:-}"
 if [[ -n "$PORT_ENV" ]]; then
     if [[ ! "$PORT_ENV" =~ ^[0-9]{1,5}$ ]] || (( 10#$PORT_ENV < 1 || 10#$PORT_ENV > 65535 )); then
