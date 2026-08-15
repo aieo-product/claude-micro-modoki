@@ -174,6 +174,15 @@ class HidAdapter:
             except (OSError, ValueError) as e:
                 self.status["error"] = f"write error: {e}"
 
+    def _reset_input_state(self):
+        """(再)接続時に入力の途中状態を破棄する (#71)。
+        切断中に release イベントを取り落とすと pressed_at が残り、再接続直後の
+        _tick が偽 long/tap を発火させる (long に拒否系を割当てていると危険)。
+        受信バッファの断片は新セッションの先頭行を壊すため併せて捨てる。"""
+        self._keys.clear()
+        self._rxbuf.clear()
+        self._stick_dir = None
+
     def _run(self):
         while not self._stop.is_set():
             if hid is None:
@@ -186,6 +195,7 @@ class HidAdapter:
             with self._dev_lock:
                 self._dev = dev
             self.status.update(open=True, error=None)
+            self._reset_input_state()  # 切断前の途中状態を持ち越さない (#71)
             self._handshake()  # デバイスをエージェントモードに入れる（キーイベント有効化）
             try:
                 self.on_connect()  # (再)接続時に枠/LED を一度だけ再アサート（常時再送しない=軽量化）
