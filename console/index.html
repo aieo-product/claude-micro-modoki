@@ -382,6 +382,7 @@
         <span class="sub" id="m-action-current">未選択</span>
       </div>
       <div id="m-action-grid" class="action-grid"></div>
+      <div class="sub" style="margin-top:6px">＊= 本アプリ固有（本家 Codex Micro の設定体系に無い操作）</div>
     </div>
     <div class="learn-box" id="m-keyid">未学習（実機キー未紐付け）</div>
     <div class="actions">
@@ -528,10 +529,11 @@ function renderActionGrid() {
     const grp = document.createElement("div");
     grp.className = "grp";
     for (const a of actions) {
+      const custom = a.official === false;  // 本アプリ固有 (#59。official 省略時は本家相当)
       const d = document.createElement("div");
       d.className = "action-opt" + (a.id === selectedAction ? " sel" : "");
-      d.title = a.label;
-      d.innerHTML = `<span class="a-icon">${a.icon}</span><span class="a-label">${a.label}</span>`;
+      d.title = a.label + (custom ? "（本アプリ固有）" : "");
+      d.innerHTML = `<span class="a-icon">${a.icon}</span><span class="a-label">${a.label}${custom ? "＊" : ""}</span>`;
       d.onclick = () => { selectedAction = a.id; renderActionGrid(); updateActionCurrent(); };
       grp.appendChild(d);
     }
@@ -611,7 +613,8 @@ function fillActionSelect(id, selected) {
     grp.label = SCOPE_LABEL[scope] || scope;
     for (const a of actions) {
       const o = document.createElement("option");
-      o.value = a.id; o.textContent = `${a.icon} ${a.label}`;
+      o.value = a.id;
+      o.textContent = `${a.icon} ${a.label}${a.official === false ? "＊" : ""}`;  // ＊= 本アプリ固有 (#59)
       if (a.id === selected) o.selected = true;
       grp.appendChild(o);
     }

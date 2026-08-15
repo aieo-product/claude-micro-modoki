@@ -30,6 +30,29 @@ class ActionCatalogTests(unittest.TestCase):
             self.assertEqual(actions.action_scope(a["id"]), a["scope"])
         self.assertIsNone(actions.action_scope("does-not-exist"))
 
+    def test_undo_redo_present(self):
+        """本家 UNDO/REDO キーキャップ相当を追加 (#58)。"""
+        self.assertIn("undo", actions.ACTION_IDS)
+        self.assertIn("redo", actions.ACTION_IDS)
+
+    def test_fast_merged(self):
+        """FAST は本家同様 1 つに統合し、旧 id は廃止 (#59)。"""
+        self.assertIn("fast", actions.ACTION_IDS)
+        self.assertEqual(actions.action_scope("fast"), "common")
+        self.assertNotIn("fast-opus", actions.ACTION_IDS)
+        self.assertNotIn("fast-codex", actions.ACTION_IDS)
+        for legacy, new in actions.LEGACY_ACTION_IDS.items():
+            self.assertNotIn(legacy, actions.ACTION_IDS)
+            self.assertIn(new, actions.ACTION_IDS)
+
+    def test_official_classification(self):
+        """本アプリ固有 (official: False) の集合を固定する (#59。削除せず分類のみ)。"""
+        custom = {a["id"] for a in actions.ACTIONS if a.get("official") is False}
+        self.assertEqual(custom, {"hold", "compact", "accept-edits", "resume"})
+        for a in actions.ACTIONS:
+            if "official" in a:
+                self.assertIsInstance(a["official"], bool, a["id"])
+
 
 if __name__ == "__main__":
     unittest.main()

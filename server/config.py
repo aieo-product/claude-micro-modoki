@@ -6,6 +6,8 @@ import os
 import sys
 import threading
 
+from .actions import LEGACY_ACTION_IDS
+
 
 def _default_config_path() -> str:
     """config.json の場所。ソース実行時はリポジトリ直下 (gitignore 済み)。
@@ -98,17 +100,43 @@ def _deep_merge(base: dict, override: dict) -> dict:
     return out
 
 
+def _migrate_action_ids(cfg: dict) -> dict:
+    """廃止アクション id を後継へ書き換える (#59 FAST 統合)。
+    既存の config.json (キー割当・十字・ノブ・ショートカット上書き) を壊さないための移行。"""
+    def repl(aid):
+        return LEGACY_ACTION_IDS.get(aid, aid)
+
+    for binding in (cfg.get("keys") or {}).values():
+        if isinstance(binding, dict) and binding.get("action"):
+            binding["action"] = repl(binding["action"])
+    stick = cfg.get("analog_stick") or {}
+    for d, aid in list(stick.items()):
+        if isinstance(aid, str):
+            stick[d] = repl(aid)
+    knob = cfg.get("knob") or {}
+    for slot in ("rotate_cw", "rotate_ccw", "click", "long_press"):
+        if isinstance(knob.get(slot), str):
+            knob[slot] = repl(knob[slot])
+    for table_name in ("codex_app_shortcuts", "terminal_shortcuts"):
+        table = cfg.get(table_name) or {}
+        for aid in list(table):
+            new = repl(aid)
+            if new != aid:
+                table.setdefault(new, table.pop(aid))
+    return cfg
+
+
 def load() -> dict:
     with _lock:
         try:
             with open(CONFIG_PATH, encoding="utf-8") as f:
-                return _deep_merge(DEFAULT_CONFIG, json.load(f))
+                return _migrate_action_ids(_deep_merge(DEFAULT_CONFIG, json.load(f)))
         except FileNotFoundError:
             return copy.deepcopy(DEFAULT_CONFIG)
 
 
 def save(cfg: dict) -> dict:
-    merged = _deep_merge(DEFAULT_CONFIG, cfg)
+    merged = _migrate_action_ids(_deep_merge(DEFAULT_CONFIG, cfg))
     with _lock:
         # frozen 実行の初回保存ではユーザー設定ディレクトリがまだ無い (#37)
         parent = os.path.dirname(CONFIG_PATH)

@@ -46,7 +46,7 @@ COMMAND_ID_MAP = {
 KEYCAP_MAP = {
     "APPR": "approve",
     "REJ": "reject",
-    "FAST": "fast-codex",
+    "FAST": "fast",
     "CODEX": "codex-focus",
     "DIFF": "diff",
     "GIT": "git",

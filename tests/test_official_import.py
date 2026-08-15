@@ -90,7 +90,7 @@ class MappingTests(unittest.TestCase):
 
     def test_slot_actions_known_only(self):
         slots = oc.slot_actions(self._parsed())
-        self.assertEqual(slots["ACT06"], "fast-codex")
+        self.assertEqual(slots["ACT06"], "fast")   # FAST は統合後 id へ (#59)
         self.assertEqual(slots["ACT07"], "approve")
         self.assertNotIn("ACT09", slots)                        # SPLIT は未対応
         _, notes = oc.to_bridge_config(self._parsed())
