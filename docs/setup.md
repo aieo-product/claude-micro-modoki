@@ -103,12 +103,23 @@ CLAUDEMICRO_NO_DEVICE=1 .venv/bin/python -m app --smoke
 
 ### macOS アプリをビルドする
 
-`requirements-app.txt` をインストールした `.venv` を用意し、リポジトリ直下から次を実行します。PyInstaller が設定コンソールを同梱した windowed アプリを `dist/ClaudeMicro.app` に生成します。
+`requirements-app.txt` をインストールした `.venv` を用意し、リポジトリ直下から次を実行します。PyInstaller が設定コンソールと hooks 導入ファイルを同梱した windowed アプリを `dist/ClaudeMicro.app` に生成し、最後に成果物そのものを `--smoke` 起動して GET / の 200 を確認します。
 
 ```bash
 ./scripts/build_app.sh
 open dist/ClaudeMicro.app
 ```
+
+#### .app だけで使う場合の hooks 導入
+
+チェックアウトなしで `.app` だけを配布された場合も、同梱の installer で hooks を設定できます（hook クライアントは stdlib のみで動くため、実行した `python3` がそのまま hook の実行にも使われます）。
+
+```bash
+python3 "/Applications/ClaudeMicro.app/Contents/Resources/scripts/install_hooks.py" --dry-run
+python3 "/Applications/ClaudeMicro.app/Contents/Resources/scripts/install_hooks.py"
+```
+
+アンインストールは同じ場所の `uninstall_hooks.py` を実行します。`.app` を移動・削除すると登録済み hook のパスが無効になるため、その前に uninstall してください。
 
 ### GUI の動作確認
 
