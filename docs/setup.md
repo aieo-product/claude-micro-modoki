@@ -143,10 +143,11 @@ open dist/ClaudeMicro.app
 インストール実行時の環境変数 `APPROVAL_BRIDGE_TOKEN` / `CLAUDEMICRO_PORT` が plist の `EnvironmentVariables` に取り込まれます（未設定の変数は plist に書かれません）。値を変えるときはインストールスクリプトを再実行してください。
 
 ```bash
-APPROVAL_BRIDGE_TOKEN=<トークン> CLAUDEMICRO_PORT=45710 ./scripts/install_service.sh
+APPROVAL_BRIDGE_TOKEN='replace-with-your-token' CLAUDEMICRO_PORT=45710 ./scripts/install_service.sh
 ```
 
-- 注意: トークンは plist に**平文で保存**されます。トークン指定時は plist の権限を `0600`（所有者のみ）にします。
+- 注意: トークンは plist に**平文で保存**されます。トークン指定時は plist の権限を `0600`（所有者のみ）にします。改行・タブ等の制御文字を含むトークンはエラーになります。
+- `--dry-run` はトークン値を伏字（`********`）で表示します。
 - hooks（`hook_client.py` / `codex_hook_client.py`）は Claude Code / codex 側のプロセス環境の環境変数を読むため、トークン・別ポートはその環境にも同じ値を設定してください。
 
 常駐中は手順 4 の `.venv/bin/python -m server.main` を別途実行しないでください。同じポートとデバイスを使用するため競合します。手動起動に戻す場合は、先に次のスクリプトで常駐を解除します。
