@@ -6,7 +6,20 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 LABEL="com.claudemicro.bridge"
-PORT=35703
+DEFAULT_PORT=35703
+# インストール実行時の環境変数を plist の EnvironmentVariables へ取り込む (#73)。
+# 未設定なら plist に書かず、bridge は従来どおり既定値で動く。
+TOKEN="${APPROVAL_BRIDGE_TOKEN:-}"
+PORT_ENV="${CLAUDEMICRO_PORT:-}"
+if [[ -n "$PORT_ENV" ]]; then
+    if [[ ! "$PORT_ENV" =~ ^[0-9]{1,5}$ ]] || (( 10#$PORT_ENV < 1 || 10#$PORT_ENV > 65535 )); then
+        echo "エラー: CLAUDEMICRO_PORT が不正です: $PORT_ENV (1〜65535 の整数)" >&2
+        exit 2
+    fi
+    PORT="$PORT_ENV"
+else
+    PORT="$DEFAULT_PORT"
+fi
 PYTHON="$REPO_DIR/.venv/bin/python"
 USER_HOME="${HOME:?HOME が設定されていません}"
 PLIST_DIR="$USER_HOME/Library/LaunchAgents"
@@ -42,6 +55,23 @@ render_plist() {
     </array>
     <key>WorkingDirectory</key>
     <string>$repo_xml</string>
+EOF
+
+    if [[ -n "$TOKEN" || -n "$PORT_ENV" ]]; then
+        echo "    <key>EnvironmentVariables</key>"
+        echo "    <dict>"
+        if [[ -n "$TOKEN" ]]; then
+            printf '        <key>APPROVAL_BRIDGE_TOKEN</key>\n'
+            printf '        <string>%s</string>\n' "$(xml_escape "$TOKEN")"
+        fi
+        if [[ -n "$PORT_ENV" ]]; then
+            printf '        <key>CLAUDEMICRO_PORT</key>\n'
+            printf '        <string>%s</string>\n' "$PORT_ENV"
+        fi
+        echo "    </dict>"
+    fi
+
+    cat <<EOF
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
@@ -193,7 +223,11 @@ trap cleanup EXIT HUP INT TERM
 mkdir -p "$PLIST_DIR" "$LOG_DIR"
 TEMP_PLIST="$(mktemp "$PLIST_DIR/.$LABEL.plist.XXXXXX")"
 render_plist > "$TEMP_PLIST"
-chmod 0644 "$TEMP_PLIST"
+if [[ -n "$TOKEN" ]]; then
+    chmod 0600 "$TEMP_PLIST"  # トークンを平文で含むため所有者のみ読み書き可 (#73)
+else
+    chmod 0644 "$TEMP_PLIST"
+fi
 mv -f -- "$TEMP_PLIST" "$PLIST_PATH"
 TEMP_PLIST=""
 
@@ -273,4 +307,7 @@ else
     echo "launchd 状態 ($LABEL):"
     echo "  pid = $READY_PID"
 fi
-echo "設定コンソール: http://127.0.0.1:35703/"
+if [[ -n "$TOKEN" ]]; then
+    echo "注意: APPROVAL_BRIDGE_TOKEN を plist に平文で保存しました (権限 0600): $PLIST_PATH"
+fi
+echo "設定コンソール: http://127.0.0.1:$PORT/"

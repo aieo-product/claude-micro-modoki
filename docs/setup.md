@@ -136,7 +136,18 @@ open dist/ClaudeMicro.app
 
 - plist: `~/Library/LaunchAgents/com.claudemicro.bridge.plist`
 - 標準出力・標準エラー: `~/Library/Logs/claudemicro/bridge.log`
-- 設定コンソール: http://127.0.0.1:35703/
+- 設定コンソール: http://127.0.0.1:35703/ （`CLAUDEMICRO_PORT` 指定時はそのポート）
+
+### トークン・ポートを常駐サービスへ渡す
+
+インストール実行時の環境変数 `APPROVAL_BRIDGE_TOKEN` / `CLAUDEMICRO_PORT` が plist の `EnvironmentVariables` に取り込まれます（未設定の変数は plist に書かれません）。値を変えるときはインストールスクリプトを再実行してください。
+
+```bash
+APPROVAL_BRIDGE_TOKEN=<トークン> CLAUDEMICRO_PORT=45710 ./scripts/install_service.sh
+```
+
+- 注意: トークンは plist に**平文で保存**されます。トークン指定時は plist の権限を `0600`（所有者のみ）にします。
+- hooks（`hook_client.py` / `codex_hook_client.py`）は Claude Code / codex 側のプロセス環境の環境変数を読むため、トークン・別ポートはその環境にも同じ値を設定してください。
 
 常駐中は手順 4 の `.venv/bin/python -m server.main` を別途実行しないでください。同じポートとデバイスを使用するため競合します。手動起動に戻す場合は、先に次のスクリプトで常駐を解除します。
 
