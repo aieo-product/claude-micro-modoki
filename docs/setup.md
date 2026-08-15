@@ -91,7 +91,7 @@ macOS のメニューバーから設定コンソールを開く場合は、bridg
 CLAUDEMICRO_PORT=35704 .venv/bin/python -m app
 ```
 
-現在の `hook_client.py` / `codex_hook_client.py` は `35703` に接続します。別ポートは主にデバイス無効時の衝突回避・コンソール確認用で、承認フローを使う場合は hook の接続先と bridge のポートを一致させる必要があります。
+`hook_client.py` / `codex_hook_client.py` とヘッドレス bridge（`python -m server.main`）も同じ `CLAUDEMICRO_PORT` を尊重します。hook 側は不正値を既定 `35703` に落として `claudecode.log` / `codexhook.log` に記録し（Claude / codex を止めない）、bridge 側は不正値を起動エラーにします。hooks は Claude Code / codex のプロセス環境の環境変数を読むため、別ポート運用では bridge と同じ値をその環境にも設定してください。
 
 ### GUI を出さないスモークテスト
 
