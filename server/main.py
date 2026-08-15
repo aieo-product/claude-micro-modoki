@@ -1084,7 +1084,8 @@ def create_app() -> web.Application:
 
 def _serve_port() -> int:
     """ヘッドレス起動時のポート。CLAUDEMICRO_PORT を尊重する (トレイアプリと同じ規約, #74)。
-    サーバ側の不正値は黙って既定に落とさず、起動エラーで気づかせる。"""
+    app/__main__.py の _requested_port と同じく空白のみは未設定として既定に落とし、
+    それ以外の不正値は黙って既定に落とさず起動エラーで気づかせる。"""
     raw = os.environ.get("CLAUDEMICRO_PORT", "").strip()
     if not raw:
         return PORT
