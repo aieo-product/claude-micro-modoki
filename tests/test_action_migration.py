@@ -52,6 +52,18 @@ class ActionIdMigrationTests(unittest.TestCase):
         cfg = self._load_with(data)
         self.assertEqual(cfg["terminal_shortcuts"]["fast"], {"key_code": 36})
 
+    def test_two_legacy_ids_first_wins_deterministically(self):
+        """旧 id 同士が併存する場合は記載順の先勝ちで、負けた側は残さない (レビュー指摘)。"""
+        data = _legacy_config()
+        data["terminal_shortcuts"] = {
+            "fast-opus": {"key_code": 1},
+            "fast-codex": {"key_code": 2},
+        }
+        cfg = self._load_with(data)
+        self.assertEqual(cfg["terminal_shortcuts"]["fast"], {"key_code": 1})
+        self.assertNotIn("fast-opus", cfg["terminal_shortcuts"])
+        self.assertNotIn("fast-codex", cfg["terminal_shortcuts"])
+
     def test_save_persists_migrated_ids(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = os.path.join(tmp, "config.json")

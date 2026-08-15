@@ -120,9 +120,17 @@ def _migrate_action_ids(cfg: dict) -> dict:
     for table_name in ("codex_app_shortcuts", "terminal_shortcuts"):
         table = cfg.get(table_name) or {}
         for aid in list(table):
-            new = repl(aid)
-            if new != aid:
-                table.setdefault(new, table.pop(aid))
+            new = LEGACY_ACTION_IDS.get(aid)
+            if new is None:
+                continue
+            spec = table.pop(aid)
+            if new in table:
+                # 併存時は既存 (新 id、または先に現れた旧 id) を優先。
+                # 黙って消さず、負けた側の破棄を明示する (レビュー指摘)。
+                print(f"[config] {table_name}: {aid} の割当は {new} に定義済みのため破棄",
+                      flush=True)
+            else:
+                table[new] = spec
     return cfg
 
 

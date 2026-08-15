@@ -47,6 +47,8 @@ KEYCAP_MAP = {
     "APPR": "approve",
     "REJ": "reject",
     "FAST": "fast",
+    "UNDO": "undo",
+    "REDO": "redo",
     "CODEX": "codex-focus",
     "DIFF": "diff",
     "GIT": "git",
