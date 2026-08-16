@@ -1097,5 +1097,21 @@ def create_app() -> web.Application:
     return app
 
 
+def _serve_port() -> int:
+    """ヘッドレス起動時のポート。CLAUDEMICRO_PORT を尊重する (トレイアプリと同じ規約, #74)。
+    app/__main__.py の _requested_port と同じく空白のみは未設定として既定に落とし、
+    それ以外の不正値は黙って既定に落とさず起動エラーで気づかせる。"""
+    raw = os.environ.get("CLAUDEMICRO_PORT", "").strip()
+    if not raw:
+        return PORT
+    try:
+        port = int(raw, 10)
+        if not 0 <= port <= 65535:
+            raise ValueError
+    except ValueError:
+        raise SystemExit(f"invalid CLAUDEMICRO_PORT: {raw!r} (0-65535 の整数を指定)")
+    return port
+
+
 if __name__ == "__main__":
-    web.run_app(create_app(), host=HOST, port=PORT)
+    web.run_app(create_app(), host=HOST, port=_serve_port())

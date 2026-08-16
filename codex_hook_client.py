@@ -18,7 +18,7 @@ except ImportError:
     fcntl = None
 
 # フックはイベントごとに起動するため、stdlib だけで軽量に保つ。
-BRIDGE = "http://127.0.0.1:35703"
+DEFAULT_PORT = 35703  # bridge 既定ポート (server.main / トレイアプリと同じ)
 TOKEN = os.environ.get("APPROVAL_BRIDGE_TOKEN", "")
 LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "codexhook.log")
 LOG_MAX = 512 * 1024
@@ -57,6 +57,25 @@ def log(msg: str):
                     fcntl.flock(f.fileno(), fcntl.LOCK_UN)
     except Exception:
         pass
+
+
+def _bridge_url() -> str:
+    """CLAUDEMICRO_PORT を尊重して bridge の URL を決める (#74)。
+    フックは Codex を止めないため、不正値は既定に落としてログにだけ残す。"""
+    raw = os.environ.get("CLAUDEMICRO_PORT", "").strip()
+    if not raw:
+        return f"http://127.0.0.1:{DEFAULT_PORT}"
+    try:
+        port = int(raw, 10)
+        if not 1 <= port <= 65535:
+            raise ValueError
+    except ValueError:
+        log(f"[startup] CLAUDEMICRO_PORT={raw!r} が不正 → 既定 {DEFAULT_PORT} を使用")
+        return f"http://127.0.0.1:{DEFAULT_PORT}"
+    return f"http://127.0.0.1:{port}"
+
+
+BRIDGE = _bridge_url()
 
 
 def cmux_env() -> dict:
