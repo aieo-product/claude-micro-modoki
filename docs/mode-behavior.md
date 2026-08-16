@@ -13,6 +13,11 @@
 
 例: `cmux-claude` → tap → `cmux-codex` → double → `codex-app` → tap → `claude-app`。
 
+`config.mode.enabled` から除外したモードには **tap / double でも入らない**（切替先が除外中なら現モードに留まる）。
+auto の自動切替・`POST /api/mode` も同様で、API は除外モードに 400 を返す（#77）。
+`mode.current` が除外中の場合、起動時は enabled の先頭モードで起動する（除外モードで起動しない）。
+`enabled` が list 以外（null 等）・空・未知 id のみのときは全モード扱いに正規化される。
+
 枠(アンビエントリング)表示: **色 = family**（claude=コーラル / codex=青）、**エフェクト = context**（app=点灯 / cmux=呼吸）。
 
 `ACT12` は本 bridge の予約キー。**codex モードでも常に有効**（モードを抜ける手段のため）。

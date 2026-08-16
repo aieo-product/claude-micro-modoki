@@ -905,9 +905,21 @@ async function setMode(body) {
 function renderModeButtons() {
   const wrap = $("mode-buttons");
   wrap.innerHTML = "";
+  // mode.enabled で除外したモードはサーバ側で 400 になるため、押せない見た目にする (#77)。
+  // サーバ (_enabled_modes) と同じ正規化: 空・未知 id のみの list は「全モード扱い」
+  const rawEnabled = (config && config.mode) ? config.mode.enabled : null;
+  let enabled = null;
+  if (Array.isArray(rawEnabled)) {
+    const valid = rawEnabled.filter(id => catalog.modes.some(m => m.id === id));
+    if (valid.length) enabled = valid;
+  }
   for (const m of catalog.modes) {
     const b = document.createElement("button");
     b.className = "mode-btn"; b.dataset.mode = m.id; b.textContent = m.label;
+    if (enabled && !enabled.includes(m.id)) {
+      b.disabled = true;
+      b.title = "mode.enabled で除外中";
+    }
     b.onclick = () => setMode({mode: m.id});
     wrap.appendChild(b);
   }

@@ -128,6 +128,28 @@ ANIM_INTERVAL = 0.8  # 秒
 MODE_HYSTERESIS_OBSERVATIONS = 2
 
 
+def _enabled_modes(cfg: dict) -> list:
+    """mode.enabled を正規化して返す (#77)。
+    list 以外 (null 等)・空・未知 id のみの場合は全モード扱いにして操作不能を防ぐ。"""
+    enabled = (cfg.get("mode") or {}).get("enabled")
+    if not isinstance(enabled, list):
+        return actions_mod.MODE_IDS
+    valid = [m for m in enabled if m in actions_mod.MODE_IDS]
+    return valid or actions_mod.MODE_IDS
+
+
+def _startup_mode(cfg: dict) -> str:
+    """起動時モード。mode.current が除外中でも除外モードで起動しない (#77)。"""
+    current = cfg["mode"]["current"]
+    enabled = _enabled_modes(cfg)
+    if current in enabled:
+        return current
+    fallback = enabled[0]
+    print(f"[mode] 起動モード {current} は mode.enabled で除外中のため {fallback} で起動",
+          flush=True)
+    return fallback
+
+
 class Bridge:
     def __init__(self):
         self.cfg = config_mod.load()
@@ -151,7 +173,7 @@ class Bridge:
         self.last_raw_key: dict | None = None   # キー学習・デバッグ表示用
         self._learn_future: asyncio.Future | None = None
         # モード状態 (issue #11): 4モードのいずれか。auto_mode=True なら前面アプリで自動切替
-        self.mode = self.cfg["mode"]["current"]
+        self.mode = _startup_mode(self.cfg)
         self.auto_mode = self.cfg["mode"]["auto"]
         self.adapter = HidAdapter(
             vid=int(self.cfg["device"]["vid"], 0),
@@ -418,8 +440,12 @@ class Bridge:
     # ---- モード制御 (issue #7 → #11: 4モード) ----
 
     def set_mode(self, mode: str):
-        """4モードを切り替え。枠(HID書き込み)は**変化時のみ**反映（同一モードでは書き込まない=軽量）。"""
+        """4モードを切り替え。枠(HID書き込み)は**変化時のみ**反映（同一モードでは書き込まない=軽量）。
+        mode.enabled で除外したモードには手動切替 (ACT12) を含むどの経路からも入らない (#77)。"""
         if mode not in actions_mod.MODE_IDS or mode == self.mode:
+            return
+        if mode not in _enabled_modes(self.cfg):
+            print(f"[mode] {mode} は mode.enabled で除外中のため切替しない", flush=True)
             return
         self.mode = mode
         print(f"[mode] -> {mode}", flush=True)
@@ -860,11 +886,14 @@ async def handle_event(request: web.Request):
 
 
 async def handle_mode(request: web.Request):
-    """コンソールからのモード操作。body: {mode: <4モードid>} または {auto: true}"""
+    """コンソールからのモード操作。body: {mode: <4モードid>} または {auto: true}
+    mode.enabled で除外したモードは 400 で明示的に拒否する (#77)。"""
     body = await request.json()
     if body.get("auto") is True:
         bridge.auto_mode = True
     elif body.get("mode") in actions_mod.MODE_IDS:
+        if body["mode"] not in _enabled_modes(bridge.cfg):
+            return web.json_response({"error": "mode disabled"}, status=400)
         bridge.auto_mode = False
         bridge.set_mode(body["mode"])
     return web.json_response({"mode": bridge.mode, "auto_mode": bridge.auto_mode})
@@ -876,8 +905,27 @@ async def handle_get_config(request: web.Request):
 
 async def handle_put_config(request: web.Request):
     body = await request.json()
+    old = bridge.cfg
     bridge.cfg = config_mod.save(body)
     bridge.adapter.update_timings(bridge.cfg["timings"])
+    # mode.current / mode.auto の編集は再起動を待たず反映する (#77)。
+    # 「リクエストが明示したキー」かつ「値が実際に変わった」場合だけ適用する。
+    # 部分 PUT の欠落キーが既定へ戻る従来仕様 (save の deep merge) を live 状態
+    # まで動かさないため、また console の無編集保存で物理切替済みモードを
+    # 勝手に戻さないための二重条件。
+    body_mode = body.get("mode") if isinstance(body.get("mode"), dict) else {}
+    if "current" in body_mode and bridge.cfg["mode"]["current"] != old["mode"]["current"]:
+        bridge.set_mode(bridge.cfg["mode"]["current"])
+    if "auto" in body_mode and bridge.cfg["mode"]["auto"] != old["mode"]["auto"]:
+        bridge.auto_mode = bridge.cfg["mode"]["auto"]
+    # enabled 編集で live モード自体が除外された場合も、除外モードに留まらない
+    # (enabled が常に優先)。有効な current があればそこへ、無ければ enabled の先頭へ。
+    enabled = _enabled_modes(bridge.cfg)
+    if bridge.mode not in enabled:
+        bridge.set_mode(bridge.cfg["mode"]["current"]
+                        if bridge.cfg["mode"]["current"] in enabled else enabled[0])
+    if "device" in body and bridge.cfg["device"] != old["device"]:
+        print("[config] device.vid/pid の変更は再起動後に反映されます", flush=True)
     return web.json_response(bridge.cfg)
 
 
@@ -994,7 +1042,7 @@ async def mode_daemon(app):
                 front = await _frontmost_app()
                 if front:
                     cand = _mode_from_frontmost(front)
-                    if cand in bridge.cfg["mode"].get("enabled", actions_mod.MODE_IDS):
+                    if cand in _enabled_modes(bridge.cfg):
                         if cand == bridge.mode:
                             last_candidate = None
                             candidate_observations = 0

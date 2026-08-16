@@ -32,7 +32,8 @@ DEFAULT_CONFIG = {
     # 無操作でライトオフにするまでの分数。0 = 無効
     "auto_dim_minutes": 3,
     # tap/double/long の検出タイミング (承認はアクションキーで行うため gesture→承認マッピングは廃止)
-    "timings": {"tap_max_ms": 400, "double_window_ms": 350, "long_min_ms": 600},
+    # 判定は double_window_ms (double 待ち) と long_min_ms (長押し閾値) の 2 つ (#77 で tap_max_ms を廃止)
+    "timings": {"double_window_ms": 350, "long_min_ms": 600},
     # エージェントキーの割当方式: recent = 最近のセッションに自動割当 (LRU)
     "agent_keys": {"mode": "recent"},
     # アナログスティック(十字): 各方向にアクション id を割当 (#34)。デバイス実行は #35。
@@ -67,13 +68,16 @@ DEFAULT_CONFIG = {
     # 物理キー割当: key_id ("k<reportID>:<code>") -> {pos, role, index, label}
     #   role: agent(index必須) / accept / fallback / deny / none
     "keys": {},
+    # 起動時のみ読込 (変更は再起動後に反映。HID アダプタを再生成しないため)
     "device": {"vid": "0x303A", "pid": "0x8360"},
     # モード (issue #7 → #11: 4モード claude-app/codex-app/cmux-claude/cmux-codex)
-    #   toggle_key: tap で enabled モードを循環 / long で auto に戻す
+    #   toggle_key: tap=family切替 / double=context切替 / long=auto 復帰 (docs/mode-behavior.md)
     #   auto: 前面アプリ監視で自動切替
-    #   enabled: 循環対象のモード。ambient は色=family(claude/codex)、エフェクト=context(app/cmux)
+    #   enabled: 入れるモード。除外モードには手動切替・/api/mode・auto のどれからも入らない (#77)。
+    #     list 以外 (null 等)・空・未知 id のみは全モード扱いに正規化。current が除外中なら起動時は enabled の先頭
+    #   ambient は色=family(claude/codex)、エフェクト=context(app/cmux)
     "mode": {
-        "current": "cmux-claude",  # 起動時のモード
+        "current": "cmux-claude",  # 起動時のモード (PUT /api/config で値を変えると即時反映 #77)
         "toggle_key": "ACT12",     # マイク右隣・右下ボタン (実機確認済み)
         "auto": True,              # 前面アプリ自動切替
         "enabled": ["claude-app", "codex-app", "cmux-claude", "cmux-codex"],
@@ -134,17 +138,25 @@ def _migrate_action_ids(cfg: dict) -> dict:
     return cfg
 
 
+def _migrate(cfg: dict) -> dict:
+    """設定の後方互換移行 (旧アクション id の書き換え + 廃止キーの除去)。"""
+    cfg = _migrate_action_ids(cfg)
+    # tap_max_ms は device.py で未使用のまま残っていた廃止キー (#77)
+    (cfg.get("timings") or {}).pop("tap_max_ms", None)
+    return cfg
+
+
 def load() -> dict:
     with _lock:
         try:
             with open(CONFIG_PATH, encoding="utf-8") as f:
-                return _migrate_action_ids(_deep_merge(DEFAULT_CONFIG, json.load(f)))
+                return _migrate(_deep_merge(DEFAULT_CONFIG, json.load(f)))
         except FileNotFoundError:
             return copy.deepcopy(DEFAULT_CONFIG)
 
 
 def save(cfg: dict) -> dict:
-    merged = _migrate_action_ids(_deep_merge(DEFAULT_CONFIG, cfg))
+    merged = _migrate(_deep_merge(DEFAULT_CONFIG, cfg))
     with _lock:
         # frozen 実行の初回保存ではユーザー設定ディレクトリがまだ無い (#37)
         parent = os.path.dirname(CONFIG_PATH)
