@@ -91,6 +91,14 @@ macOS（`.sh` で書き込む場合も、先に `.py` でプレビュー）:
 .\.venv\Scripts\python.exe .\scripts\uninstall_hooks.py
 ```
 
+## テスト
+
+デバイス・実アプリなしで全テストが実行できます（HID はダミー化、bind 不可環境ではインプロセス経路に自動フォールバック）。CI（GitHub Actions / macOS ランナー）でも同じコマンドを実行します。
+
+```bash
+.venv/bin/python -m unittest discover -s tests
+```
+
 ## Windows サポート（実験的・未検証）
 
 **Windows は未検証です。動作報告・修正 PR を歓迎します。** Windows 実機での動作報告や問題は [GitHub issue #21](https://github.com/aieo-product/claude-micro-modoki/issues/21) へお寄せください。
