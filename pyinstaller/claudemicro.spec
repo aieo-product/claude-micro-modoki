@@ -21,11 +21,23 @@ for package in ("pystray", "webview", "PIL"):
     gui_binaries += package_binaries
     gui_hiddenimports += package_hiddenimports
 
+# .app だけを配布された利用者も hooks を導入できるよう、stdlib のみで動く
+# hook クライアントと installer を同梱する (#81)。install_hooks.py は
+# 「scripts/ の親にクライアントがある」レイアウトを厳密パス解決するため、
+# チェックアウトと同じ相対配置で Resources 配下へ置く。
+hooks_datas = [
+    (str(PROJECT_ROOT / "hook_client.py"), "."),
+    (str(PROJECT_ROOT / "codex_hook_client.py"), "."),
+    (str(PROJECT_ROOT / "scripts" / "install_hooks.py"), "scripts"),
+    (str(PROJECT_ROOT / "scripts" / "uninstall_hooks.py"), "scripts"),
+]
+
 a = Analysis(
     [str(PROJECT_ROOT / "app" / "__main__.py")],
     pathex=[str(PROJECT_ROOT)],
     binaries=gui_binaries,
-    datas=[(str(PROJECT_ROOT / "console" / "index.html"), "console")] + gui_datas,
+    datas=[(str(PROJECT_ROOT / "console" / "index.html"), "console")]
+    + hooks_datas + gui_datas,
     hiddenimports=gui_hiddenimports,
     hookspath=[],
     hooksconfig={},

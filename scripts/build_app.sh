@@ -62,4 +62,21 @@ if [[ ! -d "$APP_BUNDLE" ]]; then
     exit 1
 fi
 
+# ビルド成果物そのものを起動して GET / の 200 を確認する (#81)。
+# --smoke は GUI 依存を import せず OS 割当ポートで起動するため、常駐 bridge と競合しない。
+echo "スモーク実行: $APP_BUNDLE --smoke"
+if ! "$APP_BUNDLE/Contents/MacOS/ClaudeMicro" --smoke; then
+    echo "エラー: ビルド成果物のスモークに失敗しました。" >&2
+    exit 1
+fi
+
+# hooks 導入ファイルの同梱を確認する (#81)。
+for bundled in "hook_client.py" "codex_hook_client.py" "scripts/install_hooks.py" "scripts/uninstall_hooks.py"; do
+    if [[ ! -e "$APP_BUNDLE/Contents/Resources/$bundled" ]]; then
+        echo "エラー: $bundled が .app に同梱されていません。" >&2
+        exit 1
+    fi
+done
+
 echo "ビルド完了: $APP_BUNDLE"
+echo "hooks 導入 (.app 利用者向け): python3 \"$APP_BUNDLE/Contents/Resources/scripts/install_hooks.py\" --dry-run"
