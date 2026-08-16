@@ -61,6 +61,13 @@
           { "type": "command", "command": "python3 /ABSOLUTE/PATH/TO/claude-micro-modoki/hook_client.py", "timeout": 10 }
         ]
       }
+    ],
+    "PostToolUseFailure": [
+      {
+        "hooks": [
+          { "type": "command", "command": "python3 /ABSOLUTE/PATH/TO/claude-micro-modoki/hook_client.py", "timeout": 10 }
+        ]
+      }
     ]
   }
 }
