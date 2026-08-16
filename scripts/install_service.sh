@@ -3,11 +3,37 @@
 
 set -euo pipefail
 
+# インストール実行時の環境変数を plist の EnvironmentVariables へ取り込む (#73)。
+# 未設定なら plist に書かず、bridge は従来どおり既定値で動く。
+# 実値を dirname/sed/launchctl 等の子プロセスへ継承させないため、外部コマンドを
+# 一切呼ぶ前に取り込み、元の環境変数を unset + TOKEN の export 属性も落とす。
+TOKEN="${APPROVAL_BRIDGE_TOKEN:-}"
+unset APPROVAL_BRIDGE_TOKEN
+export -n TOKEN
+# 改行入りトークンはコマンド置換・XML 正規化・HTTP ヘッダのいずれでも壊れるため拒否する
+# (grep は行単位で改行自体を見ないため、改行は bash パターンで検出する)
+if [[ -n "$TOKEN" ]] && { [[ "$TOKEN" == *$'\n'* ]] \
+        || printf '%s' "$TOKEN" | LC_ALL=C grep -q '[[:cntrl:]]'; }; then
+    echo "エラー: APPROVAL_BRIDGE_TOKEN に改行・タブ等の制御文字は使えません。" >&2
+    exit 2
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 LABEL="com.claudemicro.bridge"
-PORT=35703
-PYTHON="$REPO_DIR/.venv/bin/python"
+DEFAULT_PORT=35703
+PORT_ENV="${CLAUDEMICRO_PORT:-}"
+if [[ -n "$PORT_ENV" ]]; then
+    if [[ ! "$PORT_ENV" =~ ^[0-9]{1,5}$ ]] || (( 10#$PORT_ENV < 1 || 10#$PORT_ENV > 65535 )); then
+        echo "エラー: CLAUDEMICRO_PORT が不正です: $PORT_ENV (1〜65535 の整数)" >&2
+        exit 2
+    fi
+    PORT="$PORT_ENV"
+else
+    PORT="$DEFAULT_PORT"
+fi
+# CLAUDEMICRO_PYTHON はテスト・特殊環境向けの上書き (通常は .venv を使う)
+PYTHON="${CLAUDEMICRO_PYTHON:-$REPO_DIR/.venv/bin/python}"
 USER_HOME="${HOME:?HOME が設定されていません}"
 PLIST_DIR="$USER_HOME/Library/LaunchAgents"
 PLIST_PATH="$PLIST_DIR/$LABEL.plist"
@@ -22,6 +48,8 @@ xml_escape() {
 }
 
 render_plist() {
+    # $1: plist に埋め込むトークン値 (dry-run では伏字を渡す。空なら書かない)
+    local token_value="${1-}"
     local python_xml repo_xml log_xml
     python_xml="$(xml_escape "$PYTHON")"
     repo_xml="$(xml_escape "$REPO_DIR")"
@@ -42,6 +70,23 @@ render_plist() {
     </array>
     <key>WorkingDirectory</key>
     <string>$repo_xml</string>
+EOF
+
+    if [[ -n "$token_value" || -n "$PORT_ENV" ]]; then
+        echo "    <key>EnvironmentVariables</key>"
+        echo "    <dict>"
+        if [[ -n "$token_value" ]]; then
+            printf '        <key>APPROVAL_BRIDGE_TOKEN</key>\n'
+            printf '        <string>%s</string>\n' "$(xml_escape "$token_value")"
+        fi
+        if [[ -n "$PORT_ENV" ]]; then
+            printf '        <key>CLAUDEMICRO_PORT</key>\n'
+            printf '        <string>%s</string>\n' "$PORT_ENV"
+        fi
+        echo "    </dict>"
+    fi
+
+    cat <<EOF
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
@@ -61,6 +106,9 @@ EOF
 usage() {
     echo "使い方: $0 [--dry-run]"
     echo "  --dry-run  plist の内容だけを表示し、ファイルや launchd を変更しません。"
+    echo "             トークン値は伏字 (********) で表示します。"
+    echo "  環境変数   APPROVAL_BRIDGE_TOKEN / CLAUDEMICRO_PORT を設定して実行すると"
+    echo "             plist の EnvironmentVariables に取り込みます。"
 }
 
 case "${1:-}" in
@@ -71,7 +119,7 @@ case "${1:-}" in
             usage >&2
             exit 2
         fi
-        render_plist
+        render_plist "${TOKEN:+********}"  # 実トークンを標準出力 (CI ログ等) へ出さない
         exit 0
         ;;
     -h|--help)
@@ -192,8 +240,12 @@ trap cleanup EXIT HUP INT TERM
 
 mkdir -p "$PLIST_DIR" "$LOG_DIR"
 TEMP_PLIST="$(mktemp "$PLIST_DIR/.$LABEL.plist.XXXXXX")"
-render_plist > "$TEMP_PLIST"
-chmod 0644 "$TEMP_PLIST"
+render_plist "$TOKEN" > "$TEMP_PLIST"
+if [[ -n "$TOKEN" ]]; then
+    chmod 0600 "$TEMP_PLIST"  # トークンを平文で含むため所有者のみ読み書き可 (#73)
+else
+    chmod 0644 "$TEMP_PLIST"
+fi
 mv -f -- "$TEMP_PLIST" "$PLIST_PATH"
 TEMP_PLIST=""
 
@@ -273,4 +325,7 @@ else
     echo "launchd 状態 ($LABEL):"
     echo "  pid = $READY_PID"
 fi
-echo "設定コンソール: http://127.0.0.1:35703/"
+if [[ -n "$TOKEN" ]]; then
+    echo "注意: APPROVAL_BRIDGE_TOKEN を plist に平文で保存しました (権限 0600): $PLIST_PATH"
+fi
+echo "設定コンソール: http://127.0.0.1:$PORT/"
