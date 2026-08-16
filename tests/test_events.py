@@ -70,8 +70,8 @@ class DummyAdapter:
         pass
 
 
-class EventApiTests(unittest.IsolatedAsyncioTestCase):
-    """デバイスなしでイベントから状態への遷移を検証する。"""
+class BridgeApiTestBase(unittest.IsolatedAsyncioTestCase):
+    """デバイスなしで実アプリ経路 (ルート/middleware/startup) の API を叩く共通基盤。"""
 
     @classmethod
     def setUpClass(cls):
@@ -188,6 +188,10 @@ class EventApiTests(unittest.IsolatedAsyncioTestCase):
         request._read_bytes = body
         response = await self.app._handle(request)
         return response.status, json.loads(response.text)
+
+
+class EventApiTests(BridgeApiTestBase):
+    """デバイスなしでイベントから状態への遷移を検証する。"""
 
     async def _post_event(self, **payload):
         status, body = await self._request_json("POST", "/api/event", payload)

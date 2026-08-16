@@ -118,6 +118,7 @@ SESSION_INFO_LIMIT = 32
 OBSERVED_INPUT_SESSION_LIMIT = 32
 OBSERVED_INPUT_ID_LIMIT = 8
 OBSERVED_INPUT_DUMMY_ID = "__missing_tool_use_id__"
+LEARN_TIMEOUT_SEC = 15  # /api/learn のキー押下待ち上限 (秒)
 # family 色 (エージェントキーの色ループ用): claude=コーラル / codex=青。config.mode の枠色と一致
 FAMILY_COLOR = {"claude": 0xD97757, "codex": 0x0A84FF}
 # これらの状態のキーだけ「状態色⇄family色」でループ (active のみアニメ=軽量)
@@ -880,17 +881,31 @@ async def handle_put_config(request: web.Request):
     return web.json_response(bridge.cfg)
 
 
+class _LearnSuperseded(Exception):
+    """後着の /api/learn が学習待ちを引き継いだことを先行ハンドラへ伝える (#72)。"""
+
+
 async def handle_learn(request: web.Request):
-    if bridge._learn_future and not bridge._learn_future.done():
-        bridge._learn_future.cancel()
-    bridge._learn_future = asyncio.get_event_loop().create_future()
+    prev = bridge._learn_future
+    if prev and not prev.done():
+        # cancel() ではクライアント切断由来のキャンセルと区別できないため専用例外で譲る (#72)
+        prev.set_exception(_LearnSuperseded())
+    fut = asyncio.get_event_loop().create_future()
+    bridge._learn_future = fut
     try:
-        key_id = await asyncio.wait_for(bridge._learn_future, timeout=15)
+        key_id = await asyncio.wait_for(fut, timeout=LEARN_TIMEOUT_SEC)
         return web.json_response({"key_id": key_id})
+    except _LearnSuperseded:
+        return web.json_response({"error": "superseded"}, status=409)
     except asyncio.TimeoutError:
         return web.json_response({"error": "timeout"}, status=408)
     finally:
-        bridge._learn_future = None
+        # 切断と supersede が重なっても未取得例外警告を残さない
+        if fut.done() and not fut.cancelled():
+            fut.exception()
+        # 後着が張り直した future を消さない compare-and-clear (#72)
+        if bridge._learn_future is fut:
+            bridge._learn_future = None
 
 
 async def handle_resolve(request: web.Request):
