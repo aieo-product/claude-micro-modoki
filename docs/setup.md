@@ -160,10 +160,17 @@ APPROVAL_BRIDGE_TOKEN='replace-with-your-token' CLAUDEMICRO_PORT=45710 ./scripts
 
 トレイアプリも同じ bridge とデバイスを使用するため、この launchd サービスと同時に起動しないでください。トレイアプリへ切り替える場合は、先にサービスをアンインストールしてください。
 
-## 7. Claude Code の hook 設定
+## 7. Claude Code / codex の hook 設定
 
-`examples/settings.local.json` を参考に、PreToolUse hook で `hook_client.py` を呼ぶよう設定する
-（`~/.claude/settings.json` 等。パスは各自の配置に合わせる）。
+推奨はインストーラです。Claude（`~/.claude/settings.json`）と codex（`~/.codex/hooks.json`）の両方へ現行イベント一式を冪等に登録します（既存設定はバックアップした上でマージ）。
+
+```bash
+.venv/bin/python scripts/install_hooks.py --dry-run   # 変更内容の確認
+./scripts/install_hooks.sh                            # 登録
+./scripts/uninstall_hooks.sh                          # 解除
+```
+
+手動で設定する場合は `examples/settings.local.json`（Claude 用）と `examples/codex-hooks.json`（codex 用。`~/.codex/hooks.json` に配置）を参考にしてください。登録イベントの正はインストーラ（`scripts/install_hooks.py` の `CLAUDE_EVENTS` / `CODEX_EVENTS` / `CODEX_TOOL_EVENTS`）で、example はそれと同期した参照用です（同期はテストで検証）。`python3` と `/ABSOLUTE/PATH/TO` は各自の配置に合わせます（`.venv/bin/python` 推奨）。codex の非管理フックは初回に TUI の `/hooks` で trust が必要です。
 
 ### 承認対象ツールの指定
 
