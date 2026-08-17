@@ -55,9 +55,31 @@
   .action-opt.sel { border-color: var(--accent); background: var(--bg); }
   .action-opt .a-icon { font-size:22px; line-height:1; }
   .action-opt .a-label { font-size:10.5px; color:var(--text); line-height:1.15; }
+  /* キーキャップ刻印ギャラリー（本家「キーキャップを編集」モーダル同等, #93） */
+  .grp-title { font-size:12px; font-weight:700; color:var(--sub); margin-bottom:6px; }
+  .keycap-grid {
+    display:grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap:6px;
+    max-height:236px; overflow-y:auto; padding:8px; background:var(--input); border-radius:10px;
+  }
+  .keycap {
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
+    aspect-ratio: 1; min-width:0; border-radius:8px; background:var(--card); border:2px solid var(--border);
+    cursor:pointer; user-select:none; padding:4px 2px; overflow:hidden;
+  }
+  .keycap:hover { border-color: var(--accent); }
+  .keycap.sel { border-color: var(--accent); background:#F6DFD3; }
+  .keycap.nodefault { opacity:.85; }
+  .keycap .kc-glyph { font-size:18px; line-height:1; min-height:20px; }
+  .keycap .kc-id { font-size:9px; font-weight:800; letter-spacing:.04em; color:var(--text); font-family: ui-monospace, monospace; }
+  .modal-wide { width: 520px; max-height: 92vh; overflow-y: auto; }
+  .k .kc-mark { font-size:8px; font-weight:800; letter-spacing:.06em; color:var(--sub); font-family: ui-monospace, monospace; }
+  .k .klabel { font-size:9px; line-height:1.1; max-width:56px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .k.stick-btn { cursor:pointer; }
+  .k.stick-btn:hover { box-shadow: 0 0 0 2px var(--accent); }
   /* 入力コントロール設定 (#34) */
   .mini { display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--sub); }
-  .stick-grid { display:grid; grid-template-columns: repeat(2, 1fr); gap:12px; }
+  .stick-grid { display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:12px; }
+  .stick-grid select { width:100%; min-width:0; }
   .cfg-knob-custom { border-top:1px dashed var(--border); padding-top:10px; }
   .switch { position:relative; display:inline-block; width:42px; height:24px; cursor:pointer; }
   .switch input { opacity:0; width:0; height:0; }
@@ -206,6 +228,10 @@
 <div class="card" id="status-card">
   <div class="row"><div class="label">接続</div><div class="value" id="st-conn">確認中…</div></div>
   <div class="row">
+    <div><div class="label">バッテリー</div><div class="desc">無線動作時の残量。bridge が値を取得できるまでは「—」</div></div>
+    <div class="value" id="st-battery">—</div>
+  </div>
+  <div class="row">
     <div><div class="label">入力監視</div><div class="desc">macOS でキー入力の読み取りに必要です（ターミナル/bridge プロセスに付与）</div></div>
     <div class="value" id="st-input">—</div>
   </div>
@@ -242,8 +268,11 @@
     <div class="pad" id="pad"></div>
   </div>
   <div class="row">
-    <div class="desc">キーをクリックして役割・アイコンを割り当てます。<b style="color:var(--accent)">コーラル帯=エージェントキー</b>（選択＋前面化）、アイコン表示=アクションキー。</div>
-    <div class="value" id="last-key">—</div>
+    <div class="desc">キーをクリックして「キーキャップを編集」、ジョイスティックをクリックして「アナログスティック」を設定します。<b style="color:var(--accent)">コーラル帯=エージェントキー</b>（選択＋前面化）、刻印表示=アクションキー。</div>
+    <div style="display:flex;align-items:center;gap:10px;flex-shrink:0">
+      <span class="value" id="last-key">—</span>
+      <button type="button" id="layout-reset">レイアウトをリセット</button>
+    </div>
   </div>
 </div>
 
@@ -345,29 +374,19 @@
   </div>
 </div>
 
-<h2>アナログスティック（十字）</h2>
-<div class="card">
-  <div class="desc" style="margin-bottom:10px">各方向で実行するアクションを選択します</div>
-  <div class="stick-grid">
-    <label class="mini">↑ 上 <select id="cfg-stick-up"></select></label>
-    <label class="mini">→ 右 <select id="cfg-stick-right"></select></label>
-    <label class="mini">↓ 下 <select id="cfg-stick-down"></select></label>
-    <label class="mini">← 左 <select id="cfg-stick-left"></select></label>
-  </div>
-</div>
-
 <div class="savebar"><button class="primary" id="save">保存</button></div>
 
+<!-- キーキャップを編集（本家 Codex Micro のモーダル構成: 刻印ギャラリー → 割り当て → 既定表示, #93） -->
 <div class="overlay" id="overlay">
-  <div class="modal">
-    <h3 id="m-title">キーを編集</h3>
-    <div class="sub">このキーの役割・アイコン・実機キーを設定します</div>
+  <div class="modal modal-wide">
+    <h3 id="m-title">キーキャップを編集</h3>
+    <div class="sub" id="m-sub">刻印を選ぶと既定の動作が入ります。割り当てで上書きできます</div>
     <div class="field">
       <span>役割</span>
       <select id="m-role">
-        <option value="none">未割り当て</option>
+        <option value="action">アクションキー</option>
         <option value="agent">エージェントキー（選択＋前面化）</option>
-        <option value="action">アクション</option>
+        <option value="none">未割り当て</option>
       </select>
     </div>
     <div class="field" id="m-index-field">
@@ -377,12 +396,15 @@
         <option value="4">4</option><option value="5">5</option><option value="6">6</option>
       </select>
     </div>
-    <div id="m-action-field" style="margin-bottom:14px">
-      <div class="field" style="margin-bottom:8px"><span>アクション</span>
-        <span class="sub" id="m-action-current">未選択</span>
+    <div id="m-action-field">
+      <div class="grp-title">キーキャップ</div>
+      <div id="m-keycap-grid" class="keycap-grid"></div>
+      <div class="field" style="margin:14px 0 6px">
+        <span>割り当て済みショートカットまたはスキル</span>
+        <select id="m-action-select" style="max-width:230px"></select>
       </div>
-      <div id="m-action-grid" class="action-grid"></div>
-      <div class="sub" style="margin-top:6px">＊= 本アプリ固有（本家 Codex Micro の設定体系に無い操作）</div>
+      <div class="sub" id="m-keycap-default">キーキャップのデフォルト: —</div>
+      <div class="sub" style="margin-top:4px">＊= 本アプリ固有（本家 Codex Micro の設定体系に無い操作）</div>
     </div>
     <div class="learn-box" id="m-keyid">未学習（実機キー未紐付け）</div>
     <div class="actions">
@@ -390,6 +412,24 @@
       <span style="flex:1"></span>
       <button id="m-cancel">キャンセル</button>
       <button class="primary" id="m-save">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- アナログスティック（本家同様、ジョイスティックのクリックで開くモーダル, #93） -->
+<div class="overlay" id="stick-overlay">
+  <div class="modal">
+    <h3>アナログスティック</h3>
+    <div class="sub">各方向で実行するアクションを選択します</div>
+    <div class="stick-grid">
+      <label class="mini">↑ 上 <select id="cfg-stick-up"></select></label>
+      <label class="mini">→ 右 <select id="cfg-stick-right"></select></label>
+      <label class="mini">↓ 下 <select id="cfg-stick-down"></select></label>
+      <label class="mini">← 左 <select id="cfg-stick-left"></select></label>
+    </div>
+    <div class="actions">
+      <button id="stick-cancel">キャンセル</button>
+      <button class="primary" id="stick-save">適用</button>
     </div>
   </div>
 </div>
@@ -407,10 +447,11 @@ const PAD_CELLS = [
 const SCOPE_LABEL = {common:"共通", control:"コントロール", claude:"claude専用", codex:"codex専用"};
 
 let config = null;
-let catalog = {actions:[], modes:[], icon_choices:[]};
+let catalog = {actions:[], modes:[], icon_choices:[], keycaps:[]};
 let editingPos = null;
 let learnedKeyId = null;
 let selectedAction = null;
+let selectedKeycap = null;  // 刻印 id (本家「キーキャップ」。動作の既定を持つ, #93)
 
 const STATE_VIEW = {
   idle: {label: "待機", color: "#B9B6AC"},
@@ -434,6 +475,7 @@ const EVENT_TIME_FORMAT = new Intl.DateTimeFormat("ja-JP", {
 });
 
 const actionById = id => catalog.actions.find(a => a.id === id);
+const keycapById = id => catalog.keycaps.find(k => k.id === id);
 
 const $ = id => document.getElementById(id);
 // TODO(follow-up): query に残る token を URL fragment または cookie へ移行する。
@@ -486,8 +528,13 @@ function keyContent(keyId, b) {
   }
   if (b.role === "action") {
     const a = actionById(b.action);
-    const icon = b.icon || a?.icon || "•";
-    return `<span class="kicon">${icon}</span><span>${a?.label ?? b.action ?? ""}</span>`;
+    const kc = b.keycap ? keycapById(b.keycap) : null;
+    // 本家同様に刻印を表示。刻印が無ければアクションのアイコンで代替
+    const icon = kc ? (kc.glyph || "▫") : (b.icon || a?.icon || "•");
+    const label = a?.label ?? b.action ?? "";
+    // 刻印あり: 本家同様に刻印を主表示 (動作名は省略表示 + title)。刻印なし: 絵文字 + 動作名
+    if (kc) return `<span class="kicon">${icon}</span><span class="kc-mark">${kc.id}</span><span class="klabel" title="${label}">${label}</span>`;
+    return `<span class="kicon">${icon}</span><span class="klabel" title="${label}">${label}</span>`;
   }
   return `<span class="dot"></span>`;
 }
@@ -497,7 +544,16 @@ function renderPad() {
   pad.innerHTML = "";
   for (const cell of PAD_CELLS) {
     const el = document.createElement("div");
-    if (cell.type === "stick") { el.className = "k round"; pad.appendChild(el); continue; }
+    if (cell.type === "stick") {
+      el.className = "k round";
+      if (cell.pos === "stick") {  // ジョイスティック: クリックで「アナログスティック」モーダル (#93)
+        el.classList.add("stick-btn");
+        el.title = "アナログスティック";
+        el.innerHTML = `<span class="kc-mark">✥</span>`;
+        el.onclick = openStickModal;
+      }
+      pad.appendChild(el); continue;
+    }
     if (cell.type === "knob") { el.className = "k round knob"; pad.appendChild(el); continue; }
     el.className = "k" + (cell.type === "wide" ? " wide" : "");
     const [keyId, b] = bindingForPos(cell.pos);
@@ -514,48 +570,49 @@ function renderPad() {
   }
 }
 
-// アイコン=アクションのタイルグリッド。タイルを選ぶと所定のアクションが
-// そのまま反映される（本家 Codex Micro の設定画面と同等。アイコンは各アクション固定）。
-function renderActionGrid() {
-  const wrap = $("m-action-grid");
+// ---- キーキャップを編集（本家モーダル構成, #93） ----
+// 刻印ギャラリー: 選ぶと「キーキャップのデフォルト」の動作が割り当てに入る（本家同等）。
+// 既定の無い刻印（本家側の既定動作が未採取）は割り当てを変えず、ユーザーが選ぶ。
+function renderKeycapGrid() {
+  const wrap = $("m-keycap-grid");
   wrap.innerHTML = "";
-  for (const scope of ["common", "control", "claude", "codex"]) {
-    const actions = catalog.actions.filter(x => x.scope === scope);
-    if (!actions.length) continue;
-    const label = document.createElement("div");
-    label.className = "grp-label";
-    label.textContent = SCOPE_LABEL[scope];
-    wrap.appendChild(label);
-    const grp = document.createElement("div");
-    grp.className = "grp";
-    for (const a of actions) {
-      const custom = a.official === false;  // 本アプリ固有 (#59。official 省略時は本家相当)
-      const d = document.createElement("div");
-      d.className = "action-opt" + (a.id === selectedAction ? " sel" : "");
-      d.title = a.label + (custom ? "（本アプリ固有）" : "");
-      d.innerHTML = `<span class="a-icon">${a.icon}</span><span class="a-label">${a.label}${custom ? "＊" : ""}</span>`;
-      d.onclick = () => { selectedAction = a.id; renderActionGrid(); updateActionCurrent(); };
-      grp.appendChild(d);
-    }
-    wrap.appendChild(grp);
+  for (const kc of catalog.keycaps) {
+    const d = document.createElement("div");
+    d.className = "keycap" + (kc.id === selectedKeycap ? " sel" : "") + (kc.default ? "" : " nodefault");
+    const def = kc.default ? actionById(kc.default) : null;
+    d.title = kc.id + (def ? ` — 既定: ${def.label}` : " — 既定なし（割り当てで選択）");
+    d.innerHTML = `<span class="kc-glyph">${kc.glyph || ""}</span><span class="kc-id">${kc.id}</span>`;
+    d.onclick = () => {
+      selectedKeycap = kc.id;
+      if (kc.default) selectedAction = kc.default;
+      renderKeycapGrid();
+      $("m-action-select").value = selectedAction || "";
+      updateKeycapDefault();
+    };
+    wrap.appendChild(d);
   }
 }
 
-function updateActionCurrent() {
-  const a = actionById(selectedAction);
-  $("m-action-current").textContent = a ? `${a.icon} ${a.label}` : "未選択";
+function updateKeycapDefault() {
+  const kc = keycapById(selectedKeycap);
+  const def = kc?.default ? actionById(kc.default) : null;
+  $("m-keycap-default").textContent = "キーキャップのデフォルト: " +
+    (kc ? (def ? `${def.icon} ${def.label}` : "なし（本家側の既定動作は未採取）") : "—");
 }
 
 function openModal(pos) {
   editingPos = pos;
   const [keyId, b] = bindingForPos(pos);
   learnedKeyId = keyId;
-  $("m-title").textContent = `キーを編集 — ${pos.toUpperCase()}`;
-  $("m-role").value = (b?.role && b.role !== "none") ? b.role : "none";
+  $("m-title").textContent = `キーキャップを編集 — ${pos.toUpperCase()}`;
+  $("m-role").value = (b?.role && b.role !== "none") ? b.role : "action";
   $("m-index").value = String(b?.index ?? "1");
-  selectedAction = b?.action || (catalog.actions[0] && catalog.actions[0].id);
-  renderActionGrid();
-  updateActionCurrent();
+  selectedKeycap = b?.keycap || null;
+  selectedAction = b?.action || null;
+  renderKeycapGrid();
+  fillActionSelect("m-action-select", selectedAction, {allowNone: true});
+  $("m-action-select").value = selectedAction || "";
+  updateKeycapDefault();
   $("m-keyid").textContent = keyId ? `実機キー: ${keyId}` : "未学習（実機キー未紐付け）";
   updateRoleFields();
   $("overlay").classList.add("show");
@@ -567,6 +624,7 @@ function updateRoleFields() {
   $("m-action-field").style.display = r === "action" ? "block" : "none";
 }
 $("m-role").onchange = updateRoleFields;
+$("m-action-select").onchange = e => { selectedAction = e.target.value || null; };
 $("m-cancel").onclick = () => $("overlay").classList.remove("show");
 
 $("m-learn").onclick = async () => {
@@ -591,9 +649,13 @@ $("m-save").onclick = () => {
     if (role === "agent") {
       config.keys[learnedKeyId] = {pos: editingPos, role, index: parseInt($("m-index").value)};
     } else {
+      if (!selectedAction) { toast("割り当てるショートカットまたはスキルを選んでください"); return; }
       // アイコンは選択アクションの正準アイコンに固定（本家同等）。カタログ外アクション時のみ既存アイコンを保持。
+      // 刻印 (keycap) は動作とは別に保持し、パッド表示に使う（本家: 刻印≠割り当て）。
       const act = actionById(selectedAction);
-      config.keys[learnedKeyId] = {pos: editingPos, role: "action", action: selectedAction, icon: act?.icon ?? prevIcon};
+      const binding = {pos: editingPos, role: "action", action: selectedAction, icon: act?.icon ?? prevIcon};
+      if (selectedKeycap) binding.keycap = selectedKeycap;
+      config.keys[learnedKeyId] = binding;
     }
   }
   $("overlay").classList.remove("show");
@@ -601,11 +663,47 @@ $("m-save").onclick = () => {
   toast("変更しました。「保存」で確定します");
 };
 
-// アクション割当用 select を全アクションで埋める（#34）
-function fillActionSelect(id, selected) {
+// ---- アナログスティック モーダル（本家同様ジョイスティッククリックで開く, #93） ----
+function openStickModal() {
+  const st = config.analog_stick || {};
+  fillActionSelect("cfg-stick-up", st.up);
+  fillActionSelect("cfg-stick-right", st.right);
+  fillActionSelect("cfg-stick-down", st.down);
+  fillActionSelect("cfg-stick-left", st.left);
+  $("stick-overlay").classList.add("show");
+}
+$("stick-cancel").onclick = () => $("stick-overlay").classList.remove("show");
+$("stick-save").onclick = () => {
+  config.analog_stick = {
+    up: $("cfg-stick-up").value, right: $("cfg-stick-right").value,
+    down: $("cfg-stick-down").value, left: $("cfg-stick-left").value,
+  };
+  $("stick-overlay").classList.remove("show");
+  toast("変更しました。「保存」で確定します");
+};
+
+// ---- レイアウトをリセット（本家同等ボタン, #93）: キー割当・十字・ノブ・マイク・オプションを既定へ ----
+$("layout-reset").onclick = async () => {
+  if (!confirm("キーの割り当て・アナログスティック・ノブ・マイクキー・オプションを既定に戻します。よろしいですか？（「保存」で確定）")) return;
+  try {
+    const defaults = await api("/api/config/defaults");
+    for (const key of ["keys", "analog_stick", "knob", "mic_key", "options"]) config[key] = defaults[key];
+    renderPad(); renderOptions();
+    toast("レイアウトを既定に戻しました。「保存」で確定します");
+  } catch (e) { toast("リセットに失敗: " + e.message); }
+};
+
+// アクション割当用 select を全アクションで埋める（#34）。allowNone で先頭に「未選択」を置く (#93)
+function fillActionSelect(id, selected, {allowNone = false} = {}) {
   const sel = $(id);
   if (!sel) return;
   sel.innerHTML = "";
+  if (allowNone) {
+    const o = document.createElement("option");
+    o.value = ""; o.textContent = "— 未選択 —";
+    if (!selected) o.selected = true;
+    sel.appendChild(o);
+  }
   for (const scope of ["common", "control", "claude", "codex"]) {
     const actions = catalog.actions.filter(a => a.scope === scope);
     if (!actions.length) continue;
@@ -632,12 +730,7 @@ function renderOptions() {
   $("cfg-autodim").value = String(config.auto_dim_minutes);
   $("cfg-agentmode").value = config.agent_keys.mode;
   $("cfg-timeout").value = config.approval_timeout_sec;
-  // アナログスティック(十字)
-  const st = config.analog_stick || {};
-  fillActionSelect("cfg-stick-up", st.up);
-  fillActionSelect("cfg-stick-right", st.right);
-  fillActionSelect("cfg-stick-down", st.down);
-  fillActionSelect("cfg-stick-left", st.left);
+  // アナログスティック(十字) はジョイスティッククリックのモーダルで編集 (#93)
   // ノブ
   const kn = config.knob || {};
   $("cfg-knobmode").value = kn.mode || "scroll";
@@ -673,11 +766,7 @@ $("save").onclick = async () => {
   config.auto_dim_minutes = parseInt($("cfg-autodim").value);
   config.approval_timeout_sec = parseInt($("cfg-timeout").value);
   config.agent_keys.mode = $("cfg-agentmode").value;
-  // アナログスティック(十字) / ノブ / マイク / オプション (#34)
-  config.analog_stick = {
-    up: $("cfg-stick-up").value, right: $("cfg-stick-right").value,
-    down: $("cfg-stick-down").value, left: $("cfg-stick-left").value,
-  };
+  // アナログスティック(十字) はモーダルの「適用」で config に反映済み (#93)。ノブ / マイク / オプション (#34)
   config.knob = {
     mode: $("cfg-knobmode").value,
     rotate_cw: $("cfg-knob-cw").value, rotate_ccw: $("cfg-knob-ccw").value,
@@ -705,6 +794,9 @@ function renderStatus(st) {
   else { inp.textContent = "—"; inp.className = "value"; }
 
   $("st-led").textContent = st.led_control ? "有効" : "未対応";
+  // バッテリー (本家接続カードの項目)。bridge が値を返すまでは「—」(#93)
+  const bat = device.battery;
+  $("st-battery").textContent = (typeof bat === "number") ? `${bat}%${device.charging ? " ⚡充電中" : ""}` : "—";
   $("last-key").textContent = st.last_raw_key ? `最終キー: ${st.last_raw_key.key_id}` : "—";
 
   renderSessions(st);

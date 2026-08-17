@@ -770,14 +770,19 @@ async def handle_import_official(request: web.Request):
              "error": "公式設定 (~/.codex/config.toml) を読めませんでした"},
             status=404)
     patch, notes = official_mod.to_bridge_config(official)
-    # キー割当は物理位置(pos)が公式側に無いため、既存 binding のある key_id だけ更新する
+    # キー割当は物理位置(pos)が公式側に無いため、既存 binding のある key_id だけ更新する。
+    # 刻印 (keycapId) もそのまま引き継ぎ、console のパッド表示に反映する (#93)
     slots = official_mod.slot_actions(official)
+    slot_keycaps = official_mod.slot_keycaps(official)
     keys_patch, skipped = {}, []
     for key_id, action in slots.items():
         existing = bridge.cfg.get("keys", {}).get(key_id)
         if existing and existing.get("role") == "action" and existing.get("pos"):
             icon = next((a["icon"] for a in actions_mod.ACTIONS if a["id"] == action), None)
             keys_patch[key_id] = {**existing, "action": action, "icon": icon}
+            keycap = slot_keycaps.get(key_id)
+            if keycap in actions_mod.KEYCAP_IDS:
+                keys_patch[key_id]["keycap"] = keycap
         else:
             skipped.append(f"{key_id}={action}")
     if skipped:
@@ -805,6 +810,7 @@ async def handle_actions(request: web.Request):
         "actions": actions_mod.ACTIONS,
         "modes": actions_mod.MODES,
         "icon_choices": actions_mod.ICON_CHOICES,
+        "keycaps": actions_mod.KEYCAPS,  # 本家キーキャップ刻印ギャラリー (#93)
     })
 
 
@@ -901,6 +907,11 @@ async def handle_mode(request: web.Request):
 
 async def handle_get_config(request: web.Request):
     return web.json_response(bridge.cfg)
+
+
+async def handle_config_defaults(request: web.Request):
+    """既定設定を返す (console の「レイアウトをリセット」用, #93)。適用は PUT /api/config で行う。"""
+    return web.json_response(config_mod.DEFAULT_CONFIG)
 
 
 async def handle_put_config(request: web.Request):
@@ -1131,6 +1142,7 @@ def create_app() -> web.Application:
     app.router.add_post("/decision", handle_decision)
     app.router.add_get("/api/status", handle_status)
     app.router.add_get("/api/config", handle_get_config)
+    app.router.add_get("/api/config/defaults", handle_config_defaults)
     app.router.add_put("/api/config", handle_put_config)
     app.router.add_post("/api/learn", handle_learn)
     app.router.add_post("/api/resolve", handle_resolve)

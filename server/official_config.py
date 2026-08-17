@@ -169,3 +169,13 @@ def slot_actions(official: dict) -> dict[str, str]:
         if action:
             result[slot] = action
     return result
+
+
+def slot_keycaps(official: dict) -> dict[str, str]:
+    """slots の keycapId をそのまま返す (key_id -> keycapId)。console の刻印表示用 (#93)。"""
+    layout = (official.get("desktop") or {}).get("codex-micro-layout") or {}
+    result: dict[str, str] = {}
+    for slot, spec in (layout.get("slots") or {}).items():
+        if isinstance(spec, dict) and isinstance(spec.get("keycapId"), str):
+            result[slot] = spec["keycapId"]
+    return result
