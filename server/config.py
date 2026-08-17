@@ -60,6 +60,9 @@ DEFAULT_CONFIG = {
     # キーをここに登録すると、コード変更なしに送出できる。
     #   action id -> {"text_key": "p", "modifiers": ["command", "option"]}
     "codex_app_shortcuts": {},
+    # 推奨キー (main.CODEX_APP_RECOMMENDED_SHORTCUTS) のうち、ユーザーが公式アプリ側で
+    # 割り当て済みとして有効化した action id (#70)。有効化したものだけ送出する
+    "codex_app_shortcuts_enabled": [],
     # 端末(claude系/cmux-codex)向けキーストロークのユーザー上書き (#55)。
     # 明示指定があれば claude 固有ガードより優先する(ユーザーが意図した割当を尊重)。
     "terminal_shortcuts": {},

@@ -67,6 +67,21 @@
   .k .klabel { font-size:9px; line-height:1.1; max-width:56px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .k.stick-btn { cursor:pointer; }
   .k.stick-btn:hover { box-shadow: 0 0 0 2px var(--accent); }
+  /* codex-app ショートカット一覧 (#70) */
+  .sc-row { display:grid; grid-template-columns: 24px minmax(120px, 1fr) 96px 132px 220px; align-items:center; gap:10px; padding:9px 18px; border-bottom:1px solid var(--border); font-size:12.5px; }
+  .sc-row:last-child { border-bottom:none; }
+  .sc-row .sc-icon { font-size:16px; text-align:center; }
+  .sc-row .sc-label { font-weight:500; }
+  .sc-row .sc-official { color:var(--sub); font-size:11px; }
+  .sc-key { font-family: ui-monospace, monospace; font-size:12px; background:var(--input); border-radius:6px; padding:2px 8px; display:inline-block; }
+  .sc-status { font-size:11px; font-weight:700; padding:2px 8px; border-radius:6px; color:#fff; display:inline-block; white-space:nowrap; }
+  .sc-status.default { background:#3E9A50; } .sc-status.recommended { background:#C0872B; } .sc-status.recommended-enabled { background:#3E9A50; }
+  .sc-status.override { background:var(--accent); } .sc-status.unsupported { background:#9CA3AF; } .sc-status.bridge { background:#6B7280; }
+  .sc-actions { display:flex; gap:6px; justify-content:flex-end; align-items:center; }
+  .sc-actions button { font-size:11px; padding:3px 8px; white-space:nowrap; }
+  .sc-actions label { font-size:11px; color:var(--sub); display:flex; align-items:center; gap:4px; white-space:nowrap; }
+  .sc-group { font-size:11px; font-weight:700; color:var(--sub); padding:8px 18px 2px; }
+  @media (max-width: 720px) { .sc-row { grid-template-columns: 24px 1fr 120px; } .sc-row .sc-status-cell, .sc-row .sc-actions { grid-column: 2 / -1; } }
   /* 入力コントロール設定 (#34) */
   .mini { display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--sub); }
   .stick-grid { display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:12px; }
@@ -318,8 +333,11 @@
 <h2>オプション</h2>
 <div class="card">
   <div class="row">
-    <div><div class="label">公式アプリの設定を取り込む</div><div class="desc">公式 Codex アプリで設定済みの Codex Micro レイアウト（ノブ／マイク／十字／明るさ）を読み込みます（読み取りのみ）</div></div>
-    <button type="button" id="import-official">取り込む</button>
+    <div><div class="label">公式アプリの設定を取り込む</div><div class="desc">公式 Codex アプリで設定済みの Codex Micro レイアウト（ノブ／マイク／十字／明るさ／キーキャップ）を読み込みます（読み取りのみ）。「プレビュー」で適用前に差分を確認できます</div></div>
+    <div style="display:flex;gap:6px;flex-shrink:0">
+      <button type="button" id="import-official-preview">プレビュー</button>
+      <button type="button" id="import-official">取り込む</button>
+    </div>
   </div>
   <div class="row">
     <div><div class="label">エージェントキー</div><div class="desc">6 つのエージェントキーがフォローする対象を選択します</div></div>
@@ -363,6 +381,19 @@
     <div><div class="label">承認タイムアウト</div><div class="desc">応答がない場合は拒否として扱われます（フェイルクローズ）</div></div>
     <div><input type="number" id="cfg-timeout" min="10" max="235" style="width:80px"> 秒</div>
   </div>
+</div>
+
+<h2>codex-app ショートカット</h2>
+<div class="card" id="shortcuts-card">
+  <div class="row">
+    <div class="desc" style="max-width:none">
+      codex-app モードは公式 Codex（ChatGPT）アプリへ<b>キーボードショートカットを送出</b>して操作します。
+      <b>既定</b>=アプリの既定ショートカットがあり登録不要 / <b>推奨キー</b>=アプリ側では既定未割り当て。
+      アプリの <b>設定 › キーボードショートカット</b> で表のキーを割り当て、「アプリ側で割り当て済み」を ON にすると送出します
+      （アプリのショートカットはローカルに保存されないため自動設定できません）。任意のキーに変える場合は「上書き」を使います。
+    </div>
+  </div>
+  <div id="shortcuts-list"><div class="empty">読み込み中…</div></div>
 </div>
 
 <div class="savebar"><button class="primary" id="save">保存</button></div>
@@ -421,6 +452,30 @@
     <div class="actions">
       <button id="stick-cancel">キャンセル</button>
       <button class="primary" id="stick-save">適用</button>
+    </div>
+  </div>
+</div>
+
+<!-- ショートカット上書き編集（#70）: 修飾キー + 文字。_sanitize_spec と同じ allowlist -->
+<div class="overlay" id="sc-overlay">
+  <div class="modal">
+    <h3 id="sc-title">ショートカットを上書き</h3>
+    <div class="sub" id="sc-sub">公式アプリ側で割り当てたキーをそのまま入力してください</div>
+    <div class="field"><span>修飾キー</span>
+      <span style="display:flex;gap:10px">
+        <label><input type="checkbox" id="sc-mod-command"> ⌘</label>
+        <label><input type="checkbox" id="sc-mod-option"> ⌥</label>
+        <label><input type="checkbox" id="sc-mod-control"> ⌃</label>
+        <label><input type="checkbox" id="sc-mod-shift"> ⇧</label>
+      </span>
+    </div>
+    <div class="field"><span>キー（1 文字）</span><input type="text" id="sc-key" maxlength="1" style="width:70px;text-align:center;font:inherit;padding:5px;border-radius:8px;border:1px solid var(--border);background:var(--input)"></div>
+    <div class="sub" id="sc-preview" style="margin-bottom:8px">—</div>
+    <div class="actions">
+      <button id="sc-delete" style="color:var(--red)">上書きを削除</button>
+      <span style="flex:1"></span>
+      <button id="sc-cancel">キャンセル</button>
+      <button class="primary" id="sc-save">適用</button>
     </div>
   </div>
 </div>
@@ -757,6 +812,129 @@ function updateKnobCustomVisibility() {
   $("cfg-knob-custom").style.display = $("cfg-knobmode").value === "custom" ? "flex" : "none";
 }
 
+// ---- codex-app ショートカット一覧 (#70) ----
+const MOD_GLYPH = {control: "⌃", option: "⌥", shift: "⇧", command: "⌘"};
+const MOD_ORDER = ["control", "option", "shift", "command"];
+function specText(spec) {
+  if (!spec) return "—";
+  const mods = MOD_ORDER.filter(m => (spec.modifiers || []).includes(m)).map(m => MOD_GLYPH[m]).join("");
+  if (spec.text_key) return mods + String(spec.text_key).toUpperCase();
+  if (spec.text) return spec.text + (spec.enter ? " ⏎" : "");
+  if (spec.key_code != null) return mods + `key#${spec.key_code}`;
+  return "—";
+}
+const SC_STATUS_LABEL = {
+  default: "既定・登録不要", recommended: "要アプリ側割当",
+  "recommended-enabled": "推奨キー・有効", override: "上書き", unsupported: "未対応", bridge: "bridge が直接処理",
+};
+let shortcutsData = null;
+let scEditing = null;
+
+async function loadShortcuts() {
+  const card = $("shortcuts-list");
+  try { shortcutsData = await api("/api/shortcuts"); }
+  catch (e) { showEmpty(card, "取得に失敗: " + e.message); return; }
+  renderShortcuts();
+}
+
+function renderShortcuts() {
+  const card = $("shortcuts-list");
+  if (!shortcutsData) return;
+  const enabled = new Set(config.codex_app_shortcuts_enabled || []);
+  const overrides = config.codex_app_shortcuts || {};
+  const frag = document.createDocumentFragment();
+  const groups = [
+    ["登録不要（アプリの既定ショートカット）", r => r.status === "default"],
+    ["アプリ側で割り当てが必要（推奨キー）", r => r.status === "recommended" || r.status === "recommended-enabled"],
+    ["上書き済み", r => r.status === "override"],
+    ["未対応（アプリにショートカット項目が無い）", r => r.status === "unsupported"],
+  ];
+  for (const [title, pred] of groups) {
+    const rows = shortcutsData.codex_app.filter(pred);
+    if (!rows.length) continue;
+    const g = document.createElement("div"); g.className = "sc-group"; g.textContent = title; frag.appendChild(g);
+    for (const r of rows) {
+      const isEnabled = enabled.has(r.id);
+      const status = r.status === "recommended" && isEnabled ? "recommended-enabled" : r.status;
+      const row = document.createElement("div"); row.className = "sc-row";
+      row.append(span("sc-icon", r.icon));
+      const lab = document.createElement("div");
+      lab.append(span("sc-label", r.label));
+      if (r.official_label) { lab.append(document.createElement("br")); lab.append(span("sc-official", "アプリ側: " + r.official_label)); }
+      row.append(lab);
+      const key = overrides[r.id] || r.default || r.recommended;
+      row.append(span("sc-key", specText(key)));
+      const st = span("sc-status " + status, SC_STATUS_LABEL[status] || status); st.classList.add("sc-status-cell");
+      row.append(st);
+      const act = document.createElement("div"); act.className = "sc-actions";
+      if (r.status === "recommended" || r.status === "recommended-enabled") {
+        const l = document.createElement("label");
+        const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = isEnabled;
+        cb.onchange = () => {
+          const set = new Set(config.codex_app_shortcuts_enabled || []);
+          cb.checked ? set.add(r.id) : set.delete(r.id);
+          config.codex_app_shortcuts_enabled = [...set];
+          renderShortcuts(); toast("変更しました。「保存」で確定します");
+        };
+        l.append(cb, document.createTextNode("アプリ側で割り当て済み"));
+        act.append(l);
+      }
+      if (r.status !== "bridge") {
+        const b = document.createElement("button"); b.type = "button"; b.textContent = overrides[r.id] ? "上書きを編集" : "上書き";
+        b.onclick = () => openShortcutModal(r);
+        act.append(b);
+      }
+      row.append(act);
+      frag.appendChild(row);
+    }
+  }
+  card.replaceChildren(frag);
+}
+
+function updateScPreview() {
+  const mods = MOD_ORDER.filter(m => $("sc-mod-" + m).checked);
+  const k = $("sc-key").value;
+  $("sc-preview").textContent = "送出: " + (k ? mods.map(m => MOD_GLYPH[m]).join("") + k.toUpperCase() : "—");
+}
+function openShortcutModal(r) {
+  scEditing = r;
+  const cur = (config.codex_app_shortcuts || {})[r.id] || r.default || r.recommended || {};
+  $("sc-title").textContent = `ショートカットを上書き — ${r.label}`;
+  $("sc-sub").textContent = r.official_label ? `アプリ側の項目「${r.official_label}」に割り当てたキーを入力` : "公式アプリ側で割り当てたキーをそのまま入力してください";
+  for (const m of MOD_ORDER) $("sc-mod-" + m).checked = (cur.modifiers || []).includes(m);
+  $("sc-key").value = cur.text_key || "";
+  $("sc-delete").style.display = (config.codex_app_shortcuts || {})[r.id] ? "" : "none";
+  updateScPreview();
+  $("sc-overlay").classList.add("show");
+}
+for (const m of MOD_ORDER) $("sc-mod-" + m).onchange = updateScPreview;
+$("sc-key").oninput = updateScPreview;
+$("sc-cancel").onclick = () => $("sc-overlay").classList.remove("show");
+$("sc-delete").onclick = () => {
+  delete (config.codex_app_shortcuts || {})[scEditing.id];
+  $("sc-overlay").classList.remove("show"); renderShortcuts(); toast("上書きを削除しました。「保存」で確定します");
+};
+$("sc-save").onclick = () => {
+  const k = $("sc-key").value;
+  const mods = MOD_ORDER.filter(m => $("sc-mod-" + m).checked);
+  if (!k || k.length !== 1) { toast("キーは 1 文字で指定してください"); return; }
+  if (!mods.length) { toast("修飾キーを 1 つ以上選んでください（誤送出防止）"); return; }
+  config.codex_app_shortcuts = config.codex_app_shortcuts || {};
+  config.codex_app_shortcuts[scEditing.id] = {text_key: k, modifiers: mods};
+  $("sc-overlay").classList.remove("show"); renderShortcuts(); toast("変更しました。「保存」で確定します");
+};
+
+$("import-official-preview").onclick = async () => {
+  try {
+    const r = await api("/api/import-official");
+    const p = r.preview || {};
+    const parts = [];
+    for (const [k, v] of Object.entries(p)) parts.push(`${k}: ${JSON.stringify(v)}`);
+    const notes = (r.notes || []).length ? "\n注記: " + r.notes.join(" / ") : "";
+    alert("公式設定の取り込みプレビュー（まだ適用されません）:\n\n" + (parts.join("\n") || "（差分なし）") + notes);
+  } catch (e) { toast("プレビューに失敗: " + e.message); }
+};
+
 function renderOptions() {
   $("cfg-brightness").value = config.brightness;
   $("brightness-val").textContent = config.brightness + "%";
@@ -810,7 +988,7 @@ $("save").onclick = async () => {
   try {
     config = await api("/api/config", {method: "PUT", body: JSON.stringify(config)});
     toast("保存しました");
-    renderPad(); renderOptions();
+    renderPad(); renderOptions(); loadShortcuts();
   } catch (e) { toast("保存に失敗: " + e.message); }
 };
 
@@ -1153,6 +1331,7 @@ async function init() {
   renderModeButtons();
   renderPad();
   renderOptions();
+  loadShortcuts();  // 一覧は静的 (再取得は保存後のみ)
   let polling = false;
   poll = async () => {
     if (polling) return;
