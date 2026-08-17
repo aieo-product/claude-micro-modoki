@@ -119,18 +119,21 @@ CODEX_APP_KEYSTROKE_MAP = {
 # ChatGPT.app の 設定 > キーボードショートカット でこの表どおりに割り当て、console で
 # 「アプリ側で割り当て済み」にすると送出対象になる。未有効のうちは送らない
 # (アプリ側で未割当のキーを送っても無反応か別機能に化けるため)。
-# キーは本家既定 (⌘系) や macOS 標準と衝突しにくい ⌃⌥⇧+文字 に統一。
+# キーは ⌘⌃⇧+英字 に統一: 本家既定 (⌘/⇧⌘/⌥⌘/⌃) と重ならず、⌃⌥ を使わない (⌃⌥ は
+# VoiceOver の VO キーで ⌃⌥⇧M 等が VO コマンドと衝突する, レビュー指摘)。⌘⌃⇧ 三重押しの
+# 英字は macOS 既定ショートカットに割当が無い。=/- は配列依存で text_key 送出が壊れうる
+# ため英字 (U/J) にした。
 CODEX_APP_RECOMMENDED_SHORTCUTS = {
-    "fast":                  {"text_key": "f", "modifiers": ["control", "option", "shift"], "official_label": "高速モードを切り替え"},
-    "plan-mode":             {"text_key": "p", "modifiers": ["control", "option", "shift"], "official_label": "プランモードの切り替え"},
-    "inference-effort":      {"text_key": "=", "modifiers": ["control", "option", "shift"], "official_label": "推論の負荷を上げる"},
-    "inference-effort-down": {"text_key": "-", "modifiers": ["control", "option", "shift"], "official_label": "推論の負荷を下げる"},
-    "git":                   {"text_key": "g", "modifiers": ["control", "option", "shift"], "official_label": "コミットまたはプッシュ"},
-    "branch":                {"text_key": "b", "modifiers": ["control", "option", "shift"], "official_label": "ブランチを作成"},
-    "draft":                 {"text_key": "d", "modifiers": ["control", "option", "shift"], "official_label": "ドラフト PR を作成"},
-    "pr":                    {"text_key": "r", "modifiers": ["control", "option", "shift"], "official_label": "PR を作成"},
-    "merge":                 {"text_key": "m", "modifiers": ["control", "option", "shift"], "official_label": "PR をマージ"},
-    "new-window":            {"text_key": "w", "modifiers": ["control", "option", "shift"], "official_label": "新しいウィンドウで開く"},
+    "fast":                  {"text_key": "f", "modifiers": ["command", "control", "shift"], "official_label": "高速モードを切り替え"},
+    "plan-mode":             {"text_key": "p", "modifiers": ["command", "control", "shift"], "official_label": "プランモードの切り替え"},
+    "inference-effort":      {"text_key": "u", "modifiers": ["command", "control", "shift"], "official_label": "推論の負荷を上げる"},
+    "inference-effort-down": {"text_key": "j", "modifiers": ["command", "control", "shift"], "official_label": "推論の負荷を下げる"},
+    "git":                   {"text_key": "g", "modifiers": ["command", "control", "shift"], "official_label": "コミットまたはプッシュ"},
+    "branch":                {"text_key": "b", "modifiers": ["command", "control", "shift"], "official_label": "ブランチを作成"},
+    "draft":                 {"text_key": "d", "modifiers": ["command", "control", "shift"], "official_label": "ドラフト PR を作成"},
+    "pr":                    {"text_key": "r", "modifiers": ["command", "control", "shift"], "official_label": "PR を作成"},
+    "merge":                 {"text_key": "m", "modifiers": ["command", "control", "shift"], "official_label": "PR をマージ"},
+    "new-window":            {"text_key": "w", "modifiers": ["command", "control", "shift"], "official_label": "新しいウィンドウで開く"},
 }
 
 AGENT_KEY_COUNT = 6
@@ -996,19 +999,21 @@ def _invalid_shortcut_entries(body: dict) -> list[str]:
     console へ即フィードバックする。"""
     bad = []
     for table in ("codex_app_shortcuts", "terminal_shortcuts"):
-        entries = body.get(table)
-        if entries is None:
-            continue
+        if table not in body:
+            continue  # 部分 PUT でのキー欠落は既定へ戻る従来仕様。明示 null は不正
+        entries = body[table]
         if not isinstance(entries, dict):
             bad.append(f"{table}: object が必要")
             continue
         for aid, spec in entries.items():
-            if aid not in actions_mod.ACTION_IDS or Bridge._sanitize_spec(spec) is None:
+            if not isinstance(aid, str) or aid not in actions_mod.ACTION_IDS \
+                    or Bridge._sanitize_spec(spec) is None:
                 bad.append(f"{table}:{aid}")
-    enabled = body.get("codex_app_shortcuts_enabled")
-    if enabled is not None:
+    if "codex_app_shortcuts_enabled" in body:
+        enabled = body["codex_app_shortcuts_enabled"]
         if not isinstance(enabled, list) or any(
-                aid not in CODEX_APP_RECOMMENDED_SHORTCUTS for aid in enabled):
+                not isinstance(aid, str) or aid not in CODEX_APP_RECOMMENDED_SHORTCUTS
+                for aid in enabled):
             bad.append("codex_app_shortcuts_enabled: 推奨キーのある action id のリストが必要")
     return bad
 

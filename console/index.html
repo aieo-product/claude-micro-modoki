@@ -837,25 +837,33 @@ async function loadShortcuts() {
   renderShortcuts();
 }
 
+// 表示状態は保存済みの r.status ではなく、現在の config (未保存の編集を含む) から毎回算出する
+function effectiveStatus(r) {
+  if (r.status === "bridge") return "bridge";
+  if ((config.codex_app_shortcuts || {})[r.id]) return "override";
+  if (r.default) return "default";
+  if (r.recommended) return (config.codex_app_shortcuts_enabled || []).includes(r.id) ? "recommended-enabled" : "recommended";
+  return "unsupported";
+}
+
 function renderShortcuts() {
   const card = $("shortcuts-list");
   if (!shortcutsData) return;
-  const enabled = new Set(config.codex_app_shortcuts_enabled || []);
   const overrides = config.codex_app_shortcuts || {};
   const frag = document.createDocumentFragment();
   const groups = [
-    ["登録不要（アプリの既定ショートカット）", r => r.status === "default"],
-    ["アプリ側で割り当てが必要（推奨キー）", r => r.status === "recommended" || r.status === "recommended-enabled"],
-    ["上書き済み", r => r.status === "override"],
-    ["未対応（アプリにショートカット項目が無い）", r => r.status === "unsupported"],
+    ["登録不要（アプリの既定ショートカット）", st => st === "default"],
+    ["アプリ側で割り当てが必要（推奨キー）", st => st === "recommended" || st === "recommended-enabled"],
+    ["上書き済み", st => st === "override"],
+    ["bridge が直接処理（承認系）", st => st === "bridge"],
+    ["未対応（アプリにショートカット項目が無い）", st => st === "unsupported"],
   ];
+  const withStatus = shortcutsData.codex_app.map(r => [r, effectiveStatus(r)]);
   for (const [title, pred] of groups) {
-    const rows = shortcutsData.codex_app.filter(pred);
+    const rows = withStatus.filter(([, st]) => pred(st));
     if (!rows.length) continue;
     const g = document.createElement("div"); g.className = "sc-group"; g.textContent = title; frag.appendChild(g);
-    for (const r of rows) {
-      const isEnabled = enabled.has(r.id);
-      const status = r.status === "recommended" && isEnabled ? "recommended-enabled" : r.status;
+    for (const [r, status] of rows) {
       const row = document.createElement("div"); row.className = "sc-row";
       row.append(span("sc-icon", r.icon));
       const lab = document.createElement("div");
@@ -863,13 +871,13 @@ function renderShortcuts() {
       if (r.official_label) { lab.append(document.createElement("br")); lab.append(span("sc-official", "アプリ側: " + r.official_label)); }
       row.append(lab);
       const key = overrides[r.id] || r.default || r.recommended;
-      row.append(span("sc-key", specText(key)));
+      row.append(span("sc-key", status === "bridge" ? "—" : specText(key)));
       const st = span("sc-status " + status, SC_STATUS_LABEL[status] || status); st.classList.add("sc-status-cell");
       row.append(st);
       const act = document.createElement("div"); act.className = "sc-actions";
-      if (r.status === "recommended" || r.status === "recommended-enabled") {
+      if (r.recommended && !overrides[r.id]) {
         const l = document.createElement("label");
-        const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = isEnabled;
+        const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = status === "recommended-enabled";
         cb.onchange = () => {
           const set = new Set(config.codex_app_shortcuts_enabled || []);
           cb.checked ? set.add(r.id) : set.delete(r.id);
@@ -879,7 +887,7 @@ function renderShortcuts() {
         l.append(cb, document.createTextNode("アプリ側で割り当て済み"));
         act.append(l);
       }
-      if (r.status !== "bridge") {
+      if (status !== "bridge") {
         const b = document.createElement("button"); b.type = "button"; b.textContent = overrides[r.id] ? "上書きを編集" : "上書き";
         b.onclick = () => openShortcutModal(r);
         act.append(b);
@@ -989,7 +997,12 @@ $("save").onclick = async () => {
     config = await api("/api/config", {method: "PUT", body: JSON.stringify(config)});
     toast("保存しました");
     renderPad(); renderOptions(); loadShortcuts();
-  } catch (e) { toast("保存に失敗: " + e.message); }
+  } catch (e) {
+    // 400 (不正なショートカット) はサーバの entries を見せて直せるようにする
+    let msg = e.message;
+    try { const j = JSON.parse(e.message); if (j.entries) msg = "不正なショートカット: " + j.entries.join(", "); } catch { /* 非 JSON */ }
+    toast("保存に失敗: " + msg);
+  }
 };
 
 function renderStatus(st) {
