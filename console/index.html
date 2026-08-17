@@ -928,7 +928,8 @@ $("sc-save").onclick = () => {
   if (!k || k.length !== 1) { toast("キーは 1 文字で指定してください"); return; }
   if (!mods.length) { toast("修飾キーを 1 つ以上選んでください（誤送出防止）"); return; }
   config.codex_app_shortcuts = config.codex_app_shortcuts || {};
-  config.codex_app_shortcuts[scEditing.id] = {text_key: k, modifiers: mods};
+  // 大文字は AppleScript keystroke で暗黙の ⇧ が付くため小文字に正規化 (⇧ はチェックで明示)
+  config.codex_app_shortcuts[scEditing.id] = {text_key: k.toLowerCase(), modifiers: mods};
   $("sc-overlay").classList.remove("show"); renderShortcuts(); toast("変更しました。「保存」で確定します");
 };
 

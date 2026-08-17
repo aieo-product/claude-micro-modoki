@@ -138,6 +138,17 @@ def _migrate_action_ids(cfg: dict) -> dict:
                       flush=True)
             else:
                 table[new] = spec
+    # 有効化済み推奨キー (#70) も旧 id を写像し、リネーム後に黙って送出停止したり
+    # 保存が恒久 400 になったりしないようにする (レビュー指摘)。順序維持・重複除去
+    enabled = cfg.get("codex_app_shortcuts_enabled")
+    if isinstance(enabled, list):
+        seen, out = set(), []
+        for aid in enabled:
+            new = repl(aid) if isinstance(aid, str) else aid
+            if new not in seen:
+                seen.add(new)
+                out.append(new)
+        cfg["codex_app_shortcuts_enabled"] = out
     return cfg
 
 

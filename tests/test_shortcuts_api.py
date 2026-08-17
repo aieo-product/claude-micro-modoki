@@ -128,3 +128,14 @@ class PutConfigShortcutValidationTests(BridgeApiTestBase):
                 status, resp = await self._put(body)
                 self.assertEqual(status, 400, resp)
                 self.assertEqual(resp["error"], "invalid shortcut")
+
+
+class EnabledMigrationTests(BridgeApiTestBase):
+    """codex_app_shortcuts_enabled も旧 id → 新 id へ写像される (#70 レビュー指摘)。"""
+
+    def test_legacy_ids_in_enabled_are_migrated(self):
+        with mock.patch.dict(server_main.actions_mod.LEGACY_ACTION_IDS, {"old-fast": "fast"}):
+            cfg = config_mod._migrate(
+                config_mod._deep_merge(config_mod.DEFAULT_CONFIG,
+                                       {"codex_app_shortcuts_enabled": ["old-fast", "merge", "fast"]}))
+        self.assertEqual(cfg["codex_app_shortcuts_enabled"], ["fast", "merge"])  # 写像 + 重複除去 + 順序維持
