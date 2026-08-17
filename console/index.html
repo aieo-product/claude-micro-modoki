@@ -596,8 +596,17 @@ function renderKeycapGrid() {
     };
     wrap.appendChild(d);
   }
-  // 選択中の刻印がスクロール領域の外にあっても見えるようにする
-  wrap.querySelector(".keycap.sel")?.scrollIntoView({block: "nearest"});
+}
+
+// 選択中の刻印がスクロール領域の外にあっても見えるようにする。overlay が表示 (display:flex)
+// になった後でないとレイアウトボックスが無く no-op になるため、openModal の最後で呼ぶ
+function scrollSelectedKeycapIntoView() {
+  const grid = $("m-keycap-grid");
+  const sel = grid.querySelector(".keycap.sel");
+  if (!sel) return;
+  // scrollIntoView はモーダル自体のスクロールも動かしてしまうため、ギャラリー内だけを送る
+  const top = sel.offsetTop - grid.clientHeight / 2 + sel.offsetHeight / 2;
+  grid.scrollTop = Math.max(0, top);
 }
 
 function updateKeycapDefault() {
@@ -624,6 +633,7 @@ function openModal(pos) {
   $("m-keyid").textContent = keyId ? `実機キー: ${keyId}` : "未学習（実機キー未紐付け）";
   updateRoleFields();
   $("overlay").classList.add("show");
+  scrollSelectedKeycapIntoView();
 }
 
 function updateRoleFields() {
