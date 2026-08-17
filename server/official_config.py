@@ -172,7 +172,10 @@ def slot_actions(official: dict) -> dict[str, str]:
 
 
 def slot_keycaps(official: dict) -> dict[str, str]:
-    """slots の keycapId をそのまま返す (key_id -> keycapId)。console の刻印表示用 (#93)。"""
+    """slots の keycapId をそのまま返す (key_id -> keycapId)。console の刻印表示用 (#93)。
+
+    値は未検証 (型が str であることのみ確認)。呼び出し側で actions.KEYCAP_IDS により
+    ギャラリー内の刻印だけに絞ること。"""
     layout = (official.get("desktop") or {}).get("codex-micro-layout") or {}
     result: dict[str, str] = {}
     for slot, spec in (layout.get("slots") or {}).items():

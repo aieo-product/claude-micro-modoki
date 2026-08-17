@@ -19,7 +19,7 @@ class ConsoleApiTests(BridgeApiTestBase):
         """レイアウトをリセットは既定を取得して PUT する 2 段階 (取得だけでは何も変えない)。"""
         status, body = await self._request_json("GET", "/api/config/defaults")
         self.assertEqual(status, 200)
-        for key in ("keys", "analog_stick", "knob", "mic_key", "options"):
+        for key in ("keys", "analog_stick", "knob", "mic_key", "agent_keys", "options"):
             self.assertEqual(body[key], config_mod.DEFAULT_CONFIG[key])
 
     async def test_config_defaults_does_not_touch_bridge_config(self):
