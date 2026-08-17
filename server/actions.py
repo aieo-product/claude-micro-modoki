@@ -122,3 +122,59 @@ ICON_CHOICES = [
     "🕶️", "🪟", "🔀", "🔧", "🔃", "🌿", "🎛️", "⭐", "🐛", "🔍",
     "▶️", "🎨", "🧪", "⏱️", "🔔", "📦", "🤖", "🎯", "🧠", "🔒",
 ]
+
+
+# ---- 本家キーキャップ刻印ギャラリー (#93) ----
+# 本家「キーキャップを編集」モーダルのギャラリー (docs/codex-micro-official-ui.md §画面構成、
+# 実機採取 33 種 + EMPT1–4)。id は刻印表示名。既定アクション (default) は採取ベースのみ
+# (official_config.KEYCAP_MAP と同一の 18 種) で、未採取の刻印は既定なし = ユーザーが選ぶ。
+# UNDO/REDO は公式ギャラリーで未確認のため載せない (#69 の差分レビュー参照)。
+# glyph は console 表示用の絵文字 (本家は刻印画像。ここは代替表現)。
+KEYCAPS = [
+    {"id": "FAST",   "glyph": "⚡", "default": "fast"},
+    {"id": "APPR",   "glyph": "✅", "default": "approve"},
+    {"id": "REJ",    "glyph": "⛔", "default": "reject"},
+    {"id": "FORK",   "glyph": "🍴", "default": None},
+    {"id": "MIC1",   "glyph": "🎙️", "default": None},
+    {"id": "CODEX",  "glyph": "🤖", "default": "codex-focus"},
+    {"id": "BUG",    "glyph": "🐛", "default": "debug"},
+    {"id": "OAI",    "glyph": "◎",  "default": None},
+    {"id": "TERM",   "glyph": "🖥️", "default": "focus-term"},
+    {"id": "DWN",    "glyph": "📥", "default": "download"},
+    {"id": "DEL",    "glyph": "🗑️", "default": None},
+    {"id": "NEW",    "glyph": "➕", "default": "new-session"},
+    {"id": "NAV",    "glyph": "🧭", "default": "navigate"},
+    {"id": "MAGIC",  "glyph": "✨", "default": "magic"},
+    {"id": "DIFF",   "glyph": "🔀", "default": "diff"},
+    {"id": "PLAY",   "glyph": "▶️", "default": "play"},
+    {"id": "GIT",    "glyph": "🔧", "default": "git"},
+    {"id": "DRAFT",  "glyph": "📝", "default": "draft"},
+    {"id": "BRANCH", "glyph": "🌿", "default": "branch"},
+    {"id": "MRG",    "glyph": "🔗", "default": "merge"},
+    {"id": "PR",     "glyph": "🔃", "default": None},
+    {"id": "PAINT",  "glyph": "🎨", "default": None},
+    {"id": "LAB",    "glyph": "🧪", "default": None},
+    {"id": "PARTY",  "glyph": "🎉", "default": None},
+    {"id": "TIME",   "glyph": "🕐", "default": "history"},
+    {"id": "MIND+",  "glyph": "🧠", "default": None},
+    {"id": "MIND-",  "glyph": "🧊", "default": None},
+    {"id": "EMPT1",  "glyph": "",   "default": None},
+    {"id": "EMPT2",  "glyph": "",   "default": None},
+    {"id": "EMPT3",  "glyph": "",   "default": None},
+    {"id": "EMPT4",  "glyph": "",   "default": None},
+    {"id": "SETUP",  "glyph": "⚙️", "default": "setup"},
+    {"id": "FOLD",   "glyph": "📁", "default": None},
+    {"id": "UPL",    "glyph": "📤", "default": None},
+    {"id": "APPS",   "glyph": "🧩", "default": None},
+    {"id": ":yolo:", "glyph": "🎲", "default": None},
+    {"id": ":yeet:", "glyph": "🚀", "default": None},
+]
+KEYCAP_IDS = {k["id"] for k in KEYCAPS}
+
+
+def keycap_default(keycap_id: str) -> str | None:
+    """刻印の既定アクション id (採取ベース)。未知の刻印・既定なしは None。"""
+    for k in KEYCAPS:
+        if k["id"] == keycap_id:
+            return k["default"]
+    return None
