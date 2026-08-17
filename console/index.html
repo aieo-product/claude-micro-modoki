@@ -604,8 +604,10 @@ function scrollSelectedKeycapIntoView() {
   const grid = $("m-keycap-grid");
   const sel = grid.querySelector(".keycap.sel");
   if (!sel) return;
-  // scrollIntoView はモーダル自体のスクロールも動かしてしまうため、ギャラリー内だけを送る
-  const top = sel.offsetTop - grid.clientHeight / 2 + sel.offsetHeight / 2;
+  // scrollIntoView はモーダル自体のスクロールも動かしてしまうため、ギャラリー内だけを送る。
+  // offsetTop の基準 (offsetParent) は position:fixed の .overlay なので、同じ基準を持つ
+  // grid.offsetTop との差でギャラリー内の相対位置にする (#95)
+  const top = sel.offsetTop - grid.offsetTop - grid.clientHeight / 2 + sel.offsetHeight / 2;
   grid.scrollTop = Math.max(0, top);
 }
 
