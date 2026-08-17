@@ -54,9 +54,6 @@ class ActionCatalogTests(unittest.TestCase):
                 self.assertIsInstance(a["official"], bool, a["id"])
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class KeycapCatalogTests(unittest.TestCase):
     """本家キーキャップ刻印ギャラリー (#93)。既定アクションは採取ベース (KEYCAP_MAP) のみ。"""
@@ -97,3 +94,7 @@ class KeycapCatalogTests(unittest.TestCase):
         self.assertEqual(actions.keycap_default("APPR"), "approve")
         self.assertIsNone(actions.keycap_default("FORK"))
         self.assertIsNone(actions.keycap_default("does-not-exist"))
+
+
+if __name__ == "__main__":
+    unittest.main()

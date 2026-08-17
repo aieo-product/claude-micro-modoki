@@ -190,6 +190,27 @@ class ImportApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(keys["ACT08"]["action"], "hold")      # 未学習: 据え置き
         self.assertNotIn("keycap", keys["ACT08"])
 
+    async def test_post_replaces_stale_keycap_when_official_engraving_is_off_gallery(self):
+        """既存 keycap=APPR のキーに公式が UNDO (ギャラリー外) を指定 → 動作は undo、旧刻印は残さない (#93)。"""
+        self.m.bridge.cfg["keys"]["ACT07"]["keycap"] = "APPR"
+        self.m.official_mod.load_official = lambda path=None: {
+            "desktop": {"codex-micro-layout": {"slots": {"ACT07": {"keycapId": "UNDO"}}}}}
+        await self._call("POST")
+        binding = self.m.bridge.cfg["keys"]["ACT07"]
+        self.assertEqual(binding["action"], "undo")
+        self.assertNotIn("keycap", binding)
+
+    async def test_post_ignores_unknown_keycap_id(self):
+        """未知の keycapId は KEYCAP_MAP に無く動作も刻印も変えない (skipped 扱い)。"""
+        self.m.bridge.cfg["keys"]["ACT07"]["keycap"] = "APPR"
+        self.m.official_mod.load_official = lambda path=None: {
+            "desktop": {"codex-micro-layout": {"slots": {"ACT07": {"keycapId": "SPLIT"}}}}}
+        resp = await self._call("POST")
+        binding = self.m.bridge.cfg["keys"]["ACT07"]
+        self.assertEqual(binding["action"], "hold")
+        self.assertEqual(binding["keycap"], "APPR")
+        self.assertIn("applied", json.loads(resp.body.decode()))
+
     async def test_missing_official_returns_404(self):
         self.m.official_mod.load_official = lambda path=None: None
         resp = await self._call("GET")

@@ -2,7 +2,7 @@
 
 from server import actions as actions_mod
 from server import config as config_mod
-from tests.test_events import BridgeApiTestBase
+from tests.test_events import BridgeApiTestBase, server_main
 
 
 class ConsoleApiTests(BridgeApiTestBase):
@@ -21,3 +21,13 @@ class ConsoleApiTests(BridgeApiTestBase):
         self.assertEqual(status, 200)
         for key in ("keys", "analog_stick", "knob", "mic_key", "options"):
             self.assertEqual(body[key], config_mod.DEFAULT_CONFIG[key])
+
+    async def test_config_defaults_does_not_touch_bridge_config(self):
+        """defaults の取得はサーバ状態を変えず、返り値を変異させても DEFAULT_CONFIG に波及しない。"""
+        import copy as _copy
+        before = _copy.deepcopy(server_main.bridge.cfg)
+        status, body = await self._request_json("GET", "/api/config/defaults")
+        self.assertEqual(status, 200)
+        self.assertEqual(server_main.bridge.cfg, before)
+        body["knob"]["mode"] = "custom"
+        self.assertEqual(config_mod.DEFAULT_CONFIG["knob"]["mode"], "scroll")

@@ -13,6 +13,7 @@ APPROVAL_BRIDGE_TOKEN 環境変数を設定すると /decision 以外の API に
 
 import asyncio
 import collections
+import copy
 import itertools
 import json
 import os
@@ -779,7 +780,10 @@ async def handle_import_official(request: web.Request):
         existing = bridge.cfg.get("keys", {}).get(key_id)
         if existing and existing.get("role") == "action" and existing.get("pos"):
             icon = next((a["icon"] for a in actions_mod.ACTIONS if a["id"] == action), None)
-            keys_patch[key_id] = {**existing, "action": action, "icon": icon}
+            # 公式側の刻印で置き換える。ギャラリー外 (UNDO/REDO 等) なら旧刻印を残さず外す
+            # (動作だけ変わって刻印が古いままになる不整合を防ぐ, レビュー指摘)
+            keys_patch[key_id] = {k: v for k, v in existing.items() if k != "keycap"}
+            keys_patch[key_id].update({"action": action, "icon": icon})
             keycap = slot_keycaps.get(key_id)
             if keycap in actions_mod.KEYCAP_IDS:
                 keys_patch[key_id]["keycap"] = keycap
@@ -910,8 +914,9 @@ async def handle_get_config(request: web.Request):
 
 
 async def handle_config_defaults(request: web.Request):
-    """既定設定を返す (console の「レイアウトをリセット」用, #93)。適用は PUT /api/config で行う。"""
-    return web.json_response(config_mod.DEFAULT_CONFIG)
+    """既定設定を返す (console の「レイアウトをリセット」用, #93)。適用は PUT /api/config で行う。
+    読み取り専用: bridge.cfg には触れず、DEFAULT_CONFIG のコピーをシリアライズする。"""
+    return web.json_response(copy.deepcopy(config_mod.DEFAULT_CONFIG))
 
 
 async def handle_put_config(request: web.Request):

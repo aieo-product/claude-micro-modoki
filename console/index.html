@@ -521,22 +521,36 @@ function bindingForPos(pos) {
   return [null, null];
 }
 
+// binding (config.keys) の値はユーザー入力 (PUT /api/config) 由来のため innerHTML に入れず
+// DOM API + textContent で描画する (レビュー指摘: カタログ外の action/icon が来うる)。
+function span(cls, text) {
+  const s = document.createElement("span");
+  if (cls) s.className = cls;
+  if (text != null) s.textContent = String(text);
+  return s;
+}
+
 function keyContent(keyId, b) {
+  const frag = document.createDocumentFragment();
   if (b.role === "agent") {
-    return `<span class="aglabel">AGENT</span><span class="role">${b.index ?? ""}</span>` +
-           `<span>${keyId ?? ""}</span>`;
+    frag.append(span("aglabel", "AGENT"), span("role", b.index ?? ""), span(null, keyId ?? ""));
+    return frag;
   }
   if (b.role === "action") {
     const a = actionById(b.action);
-    const kc = b.keycap ? keycapById(b.keycap) : null;
-    // 本家同様に刻印を表示。刻印が無ければアクションのアイコンで代替
+    const kc = b.keycap ? keycapById(b.keycap) : null;  // カタログ解決済みの刻印のみ表示
+    // 本家同様に刻印を主表示 (動作名は省略表示 + title)。刻印が無ければアクションのアイコン + 動作名
     const icon = kc ? (kc.glyph || "▫") : (b.icon || a?.icon || "•");
     const label = a?.label ?? b.action ?? "";
-    // 刻印あり: 本家同様に刻印を主表示 (動作名は省略表示 + title)。刻印なし: 絵文字 + 動作名
-    if (kc) return `<span class="kicon">${icon}</span><span class="kc-mark">${kc.id}</span><span class="klabel" title="${label}">${label}</span>`;
-    return `<span class="kicon">${icon}</span><span class="klabel" title="${label}">${label}</span>`;
+    frag.append(span("kicon", icon));
+    if (kc) frag.append(span("kc-mark", kc.id));
+    const l = span("klabel", label);
+    l.title = label;
+    frag.append(l);
+    return frag;
   }
-  return `<span class="dot"></span>`;
+  frag.append(span("dot"));
+  return frag;
 }
 
 function renderPad() {
@@ -559,7 +573,7 @@ function renderPad() {
     const [keyId, b] = bindingForPos(cell.pos);
     if (b && b.role && b.role !== "none") {
       el.classList.add(b.role);
-      el.innerHTML = keyContent(keyId, b);
+      el.replaceChildren(keyContent(keyId, b));
     } else {
       el.classList.add("unbound");
       el.innerHTML = `<span class="dot"></span>`;
@@ -605,7 +619,8 @@ function openModal(pos) {
   const [keyId, b] = bindingForPos(pos);
   learnedKeyId = keyId;
   $("m-title").textContent = `キーキャップを編集 — ${pos.toUpperCase()}`;
-  $("m-role").value = (b?.role && b.role !== "none") ? b.role : "action";
+  // 既存 binding はその役割 (none 含む) をそのまま表示。binding が無いキーだけ既定を「アクションキー」にする
+  $("m-role").value = b ? (b.role || "none") : "action";
   $("m-index").value = String(b?.index ?? "1");
   selectedKeycap = b?.keycap || null;
   selectedAction = b?.action || null;
@@ -682,12 +697,15 @@ $("stick-save").onclick = () => {
   toast("変更しました。「保存」で確定します");
 };
 
-// ---- レイアウトをリセット（本家同等ボタン, #93）: キー割当・十字・ノブ・マイク・オプションを既定へ ----
+// ---- レイアウトをリセット（#93）。本家にも同名ボタンがあるが対象範囲は未採取のため、
+// 本アプリでは「レイアウト図と オプション欄で設定する項目」= キー割当・十字・ノブ・マイク・
+// エージェントキー・オプション を既定へ戻す独自仕様とする (明るさ/自動調光/承認タイムアウトは対象外) ----
+const LAYOUT_RESET_KEYS = ["keys", "analog_stick", "knob", "mic_key", "agent_keys", "options"];
 $("layout-reset").onclick = async () => {
-  if (!confirm("キーの割り当て・アナログスティック・ノブ・マイクキー・オプションを既定に戻します。よろしいですか？（「保存」で確定）")) return;
+  if (!confirm("キーの割り当て・アナログスティック・ノブ・マイクキー・エージェントキー・オプションを既定に戻します。よろしいですか？（「保存」で確定）")) return;
   try {
     const defaults = await api("/api/config/defaults");
-    for (const key of ["keys", "analog_stick", "knob", "mic_key", "options"]) config[key] = defaults[key];
+    for (const key of LAYOUT_RESET_KEYS) config[key] = structuredClone(defaults[key]);
     renderPad(); renderOptions();
     toast("レイアウトを既定に戻しました。「保存」で確定します");
   } catch (e) { toast("リセットに失敗: " + e.message); }
