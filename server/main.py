@@ -114,6 +114,28 @@ CODEX_APP_KEYSTROKE_MAP = {
     "redo":          {"text_key": "z", "modifiers": ["command", "shift"]},     # 直前の操作をやり直す ⇧⌘Z (#58)
 }
 
+# 公式アプリ側で「既定未割り当て」の機能に対する本アプリの推奨キー (#70)。
+# アプリのショートカットはローカルに書き込めない (アカウント同期, docs) ため、ユーザーが
+# ChatGPT.app の 設定 > キーボードショートカット でこの表どおりに割り当て、console で
+# 「アプリ側で割り当て済み」にすると送出対象になる。未有効のうちは送らない
+# (アプリ側で未割当のキーを送っても無反応か別機能に化けるため)。
+# キーは ⌘⌃⇧+英字 に統一: 本家既定 (⌘/⇧⌘/⌥⌘/⌃) と重ならず、⌃⌥ を使わない (⌃⌥ は
+# VoiceOver の VO キーで ⌃⌥⇧M 等が VO コマンドと衝突する, レビュー指摘)。⌘⌃⇧ 三重押しの
+# 英字は macOS 既定ショートカットに割当が無い。=/- は配列依存で text_key 送出が壊れうる
+# ため英字 (U/J) にした。
+CODEX_APP_RECOMMENDED_SHORTCUTS = {
+    "fast":                  {"text_key": "f", "modifiers": ["command", "control", "shift"], "official_label": "高速モードを切り替え"},
+    "plan-mode":             {"text_key": "p", "modifiers": ["command", "control", "shift"], "official_label": "プランモードの切り替え"},
+    "inference-effort":      {"text_key": "u", "modifiers": ["command", "control", "shift"], "official_label": "推論の負荷を上げる"},
+    "inference-effort-down": {"text_key": "j", "modifiers": ["command", "control", "shift"], "official_label": "推論の負荷を下げる"},
+    "git":                   {"text_key": "g", "modifiers": ["command", "control", "shift"], "official_label": "コミットまたはプッシュ"},
+    "branch":                {"text_key": "b", "modifiers": ["command", "control", "shift"], "official_label": "ブランチを作成"},
+    "draft":                 {"text_key": "d", "modifiers": ["command", "control", "shift"], "official_label": "ドラフト PR を作成"},
+    "pr":                    {"text_key": "r", "modifiers": ["command", "control", "shift"], "official_label": "PR を作成"},
+    "merge":                 {"text_key": "m", "modifiers": ["command", "control", "shift"], "official_label": "PR をマージ"},
+    "new-window":            {"text_key": "w", "modifiers": ["command", "control", "shift"], "official_label": "新しいウィンドウで開く"},
+}
+
 AGENT_KEY_COUNT = 6
 SESSION_INFO_LIMIT = 32
 OBSERVED_INPUT_SESSION_LIMIT = 32
@@ -606,6 +628,22 @@ class Bridge:
             await self._run("osascript", "-e",
                             f'tell application "System Events" to key code {int(spec["key_code"])}{using}')
 
+    def _codex_app_spec(self, action_id):
+        """codex-app 向け送出 spec の解決 (#55/#70)。
+        ユーザー上書き (codex_app_shortcuts) > 公式既定 (CODEX_APP_KEYSTROKE_MAP) >
+        推奨キー (CODEX_APP_RECOMMENDED_SHORTCUTS。ユーザーがアプリ側で割当済みとして
+        codex_app_shortcuts_enabled に入れたものだけ)。未有効の推奨キーは送らない。"""
+        cfg = getattr(self, "cfg", None) or {}
+        overrides = cfg.get("codex_app_shortcuts") or {}
+        spec = overrides.get(action_id) or CODEX_APP_KEYSTROKE_MAP.get(action_id)
+        if spec is not None:
+            return spec
+        enabled = cfg.get("codex_app_shortcuts_enabled") or []
+        if action_id in enabled and action_id in CODEX_APP_RECOMMENDED_SHORTCUTS:
+            rec = CODEX_APP_RECOMMENDED_SHORTCUTS[action_id]
+            return {k: v for k, v in rec.items() if k != "official_label"}
+        return None
+
     def _exec_action(self, action_id):
         """アクション実行のディスパッチ (#5)。対象端末は agent 選択で前面化済み前提。
         codex-app は公式アプリのショートカットへ委譲。未定義アクションは誤送出回避でログのみ。"""
@@ -614,11 +652,10 @@ class Bridge:
         if fam == "codex" and ctx == "app":
             # 公式 Codex(ChatGPT) アプリへショートカットで委譲 (#42)。既定は実機メニューから採取した
             # 割当のみ。公式側で既定未割り当ての機能は config.codex_app_shortcuts で上書きできる (#55)。
-            overrides = (getattr(self, "cfg", None) or {}).get("codex_app_shortcuts") or {}
-            spec = overrides.get(action_id) or CODEX_APP_KEYSTROKE_MAP.get(action_id)
+            spec = self._codex_app_spec(action_id)
             if spec is None:
                 print(f"[action] {action_id} -> codex-app 未割当: 公式アプリの設定 > キーボード"
-                      f"ショートカットで割り当て、設定の codex_app_shortcuts に登録してください",
+                      f"ショートカットで割り当て、console の codex-app ショートカットで有効化してください",
                       flush=True)
                 return
             safe = self._sanitize_spec(spec)
@@ -808,6 +845,43 @@ async def handle_import_official(request: web.Request):
     return web.json_response({"available": True, "applied": patch, "notes": notes})
 
 
+async def handle_shortcuts(request: web.Request):
+    """codex-app / 端末 のショートカット状況を console 用に返す (#70)。
+    アクションごとに 公式既定 / 推奨キー / ユーザー上書き / 有効化 をまとめる (読み取り専用)。"""
+    cfg = bridge.cfg
+    overrides = cfg.get("codex_app_shortcuts") or {}
+    enabled = set(cfg.get("codex_app_shortcuts_enabled") or [])
+    rows = []
+    for a in actions_mod.ACTIONS:
+        aid = a["id"]
+        if a["scope"] not in ("common", "control", "codex"):
+            continue
+        if aid in ("approve", "reject", "hold"):
+            status = "bridge"  # 承認系は bridge が直接解決
+        elif aid in overrides:
+            status = "override"
+        elif aid in CODEX_APP_KEYSTROKE_MAP:
+            status = "default"
+        elif aid in CODEX_APP_RECOMMENDED_SHORTCUTS:
+            status = "recommended-enabled" if aid in enabled else "recommended"
+        else:
+            status = "unsupported"
+        rec = CODEX_APP_RECOMMENDED_SHORTCUTS.get(aid)
+        rows.append({
+            "id": aid, "label": a["label"], "icon": a["icon"], "scope": a["scope"],
+            "status": status,
+            "default": CODEX_APP_KEYSTROKE_MAP.get(aid),
+            "recommended": {k: v for k, v in rec.items() if k != "official_label"} if rec else None,
+            "official_label": rec["official_label"] if rec else None,
+            "override": overrides.get(aid),
+        })
+    return web.json_response({
+        "codex_app": rows,
+        "terminal_shortcuts": cfg.get("terminal_shortcuts") or {},
+        "valid_modifiers": list(Bridge.VALID_MODIFIERS),
+    })
+
+
 async def handle_actions(request: web.Request):
     """アクションカタログとモード定義を返す (console のキー設定 UI 用, #5/#12)。"""
     return web.json_response({
@@ -919,8 +993,38 @@ async def handle_config_defaults(request: web.Request):
     return web.json_response(copy.deepcopy(config_mod.DEFAULT_CONFIG))
 
 
+def _invalid_shortcut_entries(body: dict) -> list[str]:
+    """codex_app_shortcuts / terminal_shortcuts の各 spec を _sanitize_spec で検証し、
+    不正なものを "table:action" で列挙する (#70)。送出時にも再検証するが、保存時に弾いて
+    console へ即フィードバックする。"""
+    bad = []
+    for table in ("codex_app_shortcuts", "terminal_shortcuts"):
+        if table not in body:
+            continue  # 部分 PUT でのキー欠落は既定へ戻る従来仕様。明示 null は不正
+        entries = body[table]
+        if not isinstance(entries, dict):
+            bad.append(f"{table}: object が必要")
+            continue
+        for aid, spec in entries.items():
+            if not isinstance(aid, str) or aid not in actions_mod.ACTION_IDS \
+                    or Bridge._sanitize_spec(spec) is None:
+                bad.append(f"{table}:{aid}")
+    if "codex_app_shortcuts_enabled" in body:
+        enabled = body["codex_app_shortcuts_enabled"]
+        if not isinstance(enabled, list) or any(
+                not isinstance(aid, str) or aid not in CODEX_APP_RECOMMENDED_SHORTCUTS
+                for aid in enabled):
+            bad.append("codex_app_shortcuts_enabled: 推奨キーのある action id のリストが必要")
+    return bad
+
+
 async def handle_put_config(request: web.Request):
     body = await request.json()
+    if not isinstance(body, dict):
+        return web.json_response({"error": "bad request"}, status=400)
+    invalid = _invalid_shortcut_entries(body)
+    if invalid:
+        return web.json_response({"error": "invalid shortcut", "entries": invalid}, status=400)
     old = bridge.cfg
     bridge.cfg = config_mod.save(body)
     bridge.adapter.update_timings(bridge.cfg["timings"])
@@ -1154,6 +1258,7 @@ def create_app() -> web.Application:
     app.router.add_post("/api/mode", handle_mode)
     app.router.add_post("/api/event", handle_event)
     app.router.add_get("/api/actions", handle_actions)
+    app.router.add_get("/api/shortcuts", handle_shortcuts)
     app.router.add_get("/api/import-official", handle_import_official)
     app.router.add_post("/api/import-official", handle_import_official)
     app.router.add_get("/", handle_index)

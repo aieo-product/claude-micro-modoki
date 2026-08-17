@@ -129,12 +129,23 @@ commandId = "composer.togglePlanMode"   # 十字: 公式 commandId
 
 ### 公式側で既定未割り当ての機能を使う
 プランモード切替・高速モード・推論負荷・git/PR などは公式アプリの既定ショートカットが無い。
-1. 公式アプリの **設定 > キーボードショートカット** で任意のキーを割り当てる
-2. 本アプリの設定 `codex_app_shortcuts` に登録する（**コード変更不要**）
+アプリのショートカットはローカルに保存されない（アカウント同期）ため本アプリからは設定できず、
+**アプリ側で 1 回だけ割り当てる**手順が必ず要る。手間を最小にするため本アプリは**推奨キー表**
+（`server/main.py` の `CODEX_APP_RECOMMENDED_SHORTCUTS`。`⌘⌃⇧+英字`: 本家既定の ⌘/⇧⌘/⌥⌘/⌃ と重ならず、
+VoiceOver の VO キー ⌃⌥ を使わない。英字のみで配列非依存）を持ち、
+console の「codex-app ショートカット」セクションで次の運用にする（#70）:
 
+1. 公式アプリの **設定 > キーボードショートカット** で、表の項目（例: 「高速モードを切り替え」）に表のキー（例: `⌘⌃⇧F`）を割り当てる
+2. console の該当行で「**アプリ側で割り当て済み**」を ON → 保存（`codex_app_shortcuts_enabled` に記録）。**ON にしたものだけ送出する**（アプリ側で未割当のキーを送っても無反応か別機能に化けるため）
+3. 表と違うキーにしたい場合は「上書き」で任意の修飾キー+1 文字を登録（`codex_app_shortcuts`。`_sanitize_spec` と同じ allowlist で保存時に検証、不正は 400）
+
+送出解決順: ユーザー上書き `codex_app_shortcuts` > 公式既定 `CODEX_APP_KEYSTROKE_MAP` > 有効化済み推奨キー。
+
+手編集する場合の形:
 ```json
 { "codex_app_shortcuts": {
-    "plan-mode": { "text_key": "y", "modifiers": ["command", "option"] } } }
+    "plan-mode": { "text_key": "y", "modifiers": ["command", "option"] } },
+  "codex_app_shortcuts_enabled": ["fast", "merge"] }
 ```
 
 端末（cmux-codex 等）で Claude 固有ガードを越えて送りたい場合は `terminal_shortcuts` を使う:
@@ -145,7 +156,9 @@ commandId = "composer.togglePlanMode"   # 十字: 公式 commandId
 ```
 
 未登録のまま実行すると、ログに「codex-app 未割当: 公式アプリの設定 > キーボードショートカットで
-割り当て、設定の codex_app_shortcuts に登録してください」と表示される。
+割り当て、console の codex-app ショートカットで有効化してください」と表示される。
+console の同セクションでは各アクションの状態（既定・登録不要 / 要アプリ側割当 / 有効 / 上書き / 未対応 /
+bridge が直接処理）を一覧でき、公式取込 (#53) の**プレビュー**（GET dry-run）も同画面から実行できる。
 
 ## codex CLI のキーバインド（実機調査, codex-cli 0.147.0 / issue #57）
 

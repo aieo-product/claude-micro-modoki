@@ -60,6 +60,9 @@ DEFAULT_CONFIG = {
     # キーをここに登録すると、コード変更なしに送出できる。
     #   action id -> {"text_key": "p", "modifiers": ["command", "option"]}
     "codex_app_shortcuts": {},
+    # 推奨キー (main.CODEX_APP_RECOMMENDED_SHORTCUTS) のうち、ユーザーが公式アプリ側で
+    # 割り当て済みとして有効化した action id (#70)。有効化したものだけ送出する
+    "codex_app_shortcuts_enabled": [],
     # 端末(claude系/cmux-codex)向けキーストロークのユーザー上書き (#55)。
     # 明示指定があれば claude 固有ガードより優先する(ユーザーが意図した割当を尊重)。
     "terminal_shortcuts": {},
@@ -135,6 +138,17 @@ def _migrate_action_ids(cfg: dict) -> dict:
                       flush=True)
             else:
                 table[new] = spec
+    # 有効化済み推奨キー (#70) も旧 id を写像し、リネーム後に黙って送出停止したり
+    # 保存が恒久 400 になったりしないようにする (レビュー指摘)。順序維持・重複除去
+    enabled = cfg.get("codex_app_shortcuts_enabled")
+    if isinstance(enabled, list):
+        seen, out = set(), []
+        for aid in enabled:
+            new = repl(aid) if isinstance(aid, str) else aid
+            if new not in seen:
+                seen.add(new)
+                out.append(new)
+        cfg["codex_app_shortcuts_enabled"] = out
     return cfg
 
 
