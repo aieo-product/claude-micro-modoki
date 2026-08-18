@@ -484,8 +484,9 @@
 
 <script>
 // パッド見た目: 公式レイアウト準拠。type: stick/knob/key/wide
+// 1段目は本家実機どおり 左上=ノブ / 右上=十字 (#102。2026-08-18 実機採取で確認)
 const PAD_CELLS = [
-  {pos:"stick", type:"stick"}, {pos:"p01", type:"key"}, {pos:"p02", type:"key"}, {pos:"enc", type:"knob"},
+  {pos:"enc", type:"knob"}, {pos:"p01", type:"key"}, {pos:"p02", type:"key"}, {pos:"stick", type:"stick"},
   {pos:"p03", type:"key"}, {pos:"p04", type:"key"}, {pos:"p05", type:"key"}, {pos:"p06", type:"key"},
   {pos:"p07", type:"key"}, {pos:"p08", type:"key"}, {pos:"p09", type:"key"}, {pos:"p10", type:"key"},
   {pos:"led", type:"stick"}, {pos:"p11", type:"wide"}, {pos:"p12", type:"key"},
