@@ -258,6 +258,7 @@ class CodexAppMapCorrectnessTests(unittest.TestCase):
         "forward":        ("]", ["command"]),                 # ⌘]
         "undo":           ("z", ["command"]),                 # ⌘Z 最後の操作を元に戻す (#58)
         "redo":           ("z", ["command", "shift"]),        # ⇧⌘Z 直前の操作をやり直す (#58)
+        "push-to-talk":   ("d", ["control", "shift"]),        # ⌃⇧D 音声入力を開始 (#68, 2026-08-18 採取)
     }
 
     def test_exact_key_and_modifiers(self):
