@@ -93,8 +93,10 @@ class KnobStickDispatchTests(unittest.TestCase):
         b.cfg["knob"]["mode"] = "inference"
         b._on_gesture("ENC_CW", "tap")
         b.cfg["knob"]["mode"] = "input-nav"
-        b._on_gesture("ENC_CC", "tap")
-        self.assertEqual(calls, [("inference-effort", "tap"), ("input-nav", "tap")])
+        b._on_gesture("ENC_CC", "tap")   # 左回転 = ↑
+        b._on_gesture("ENC_CW", "tap")   # 右回転 = ↓ (#69: 回転方向の再現)
+        self.assertEqual(calls, [("inference-effort", "tap"),
+                                 ("input-nav", "tap"), ("input-nav-down", "tap")])
 
 
 class ControlScopeActionTests(unittest.TestCase):

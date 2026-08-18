@@ -65,7 +65,8 @@ ACTIONS = [
     {"id": "forward",        "label": "進む",              "icon": "▶️", "scope": "control"},
     {"id": "back",           "label": "前へ (戻る)",       "icon": "◀️", "scope": "control"},
     {"id": "sidebar-toggle", "label": "サイドバー切替",    "icon": "📚", "scope": "control"},
-    {"id": "input-nav",      "label": "入力欄内の移動",    "icon": "↕️", "scope": "control"},
+    {"id": "input-nav",      "label": "入力欄内の移動↑",   "icon": "⬆️", "scope": "control"},
+    {"id": "input-nav-down", "label": "入力欄内の移動↓",   "icon": "⬇️", "scope": "control"},  # ノブ回転方向の再現 (#69)
     {"id": "inference-effort", "label": "推論エフォート↑", "icon": "🧠", "scope": "control"},
     {"id": "inference-effort-down", "label": "推論エフォート↓", "icon": "🧊", "scope": "control"},
     {"id": "scroll-convo",   "label": "会話スクロール",    "icon": "🖱️", "scope": "control"},

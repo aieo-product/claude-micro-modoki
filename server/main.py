@@ -59,6 +59,7 @@ KEYSTROKE_MAP = {
     "resume":       {"text": "/resume", "enter": True},        # セッション再開
     "new-session":  {"text": "/clear", "enter": True},         # 履歴クリア=新規セッション相当
     "input-nav":    {"key_code": 126},                         # ↑ (入力欄内の移動/履歴)
+    "input-nav-down": {"key_code": 125},                       # ↓ (入力欄内の移動/履歴, #69)
     "undo":         {"text_key": "z", "modifiers": ["command"]},           # 元に戻す ⌘Z (#58)
     "redo":         {"text_key": "z", "modifiers": ["command", "shift"]},  # やり直す ⇧⌘Z (#58)
     "fast":         {"text": "/fast", "enter": True},          # Claude Code の高速モード切替 (#59)
@@ -112,6 +113,7 @@ CODEX_APP_KEYSTROKE_MAP = {
     "forward":       {"text_key": "]", "modifiers": ["command"]},              # 進む ⌘]
     "undo":          {"text_key": "z", "modifiers": ["command"]},              # 最後の操作を元に戻す ⌘Z (#58)
     "redo":          {"text_key": "z", "modifiers": ["command", "shift"]},     # 直前の操作をやり直す ⇧⌘Z (#58)
+    "push-to-talk":  {"text_key": "d", "modifiers": ["control", "shift"]},     # 音声入力を開始 ⌃⇧D (#68。設定>キーボードショートカット 既定, 2026-08-18 実機採取)
 }
 
 # 公式アプリ側で「既定未割り当て」の機能に対する本アプリの推奨キー (#70)。
@@ -295,7 +297,8 @@ class Bridge:
         elif mode == "inference":
             action = "inference-effort" if cw else "inference-effort-down"
         elif mode == "input-nav":
-            action = "input-nav"
+            # 公式プリセット「入力欄内の移動」も回転方向で ↑/↓ を分ける (#69。scroll と同じ軸)
+            action = "input-nav-down" if cw else "input-nav"
         else:
             action = None
         if action:
